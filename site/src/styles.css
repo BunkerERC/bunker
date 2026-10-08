@@ -638,3 +638,10 @@ main.home { display: block; }
   .tw-stats .stat:nth-child(n+3) { border-top: 1px solid var(--line); padding-top: 12px; }
   .tw-how { grid-template-columns: 1fr; gap: 24px; }
 }
+
+/* ---------- share card ---------- */
+.share-btn { margin-left: 2px; }
+.card-modal { max-width: 760px; }
+.card-canvas { display: block; width: 100%; height: auto; background: #000; border-bottom: 1px solid var(--line); }
+.card-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px; }
+.card-msg { margin: 0; padding: 0 12px 12px; color: var(--dim2); }

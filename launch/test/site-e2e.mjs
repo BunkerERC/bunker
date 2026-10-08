@@ -150,6 +150,23 @@ async function main() {
   check(verdict(4) === 'exposed', 'scan: Solana = always exposed');
   check(verdict(5) === 'invalid', 'scan: garbage input flagged invalid');
   check(page.url().includes('#scan?a='), 'scan: shareable URL updated');
+  // share card: drawn in the browser, 1200x675 PNG, and "Post on X" opens a prefilled post
+  const sharePng = page.locator('.results .grp').first().locator('.share-btn');
+  await page.waitForFunction(() => !document.querySelector('.results .grp .share-btn').disabled, null, { timeout: 90000 });
+  await sharePng.click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download PNG' }).click();
+  const png = readFileSync(await (await dl).path());
+  check(png.readUInt32BE(16) === 1200 && png.readUInt32BE(20) === 675 && png.length > 50_000, 'share card: 1200x675 PNG made in the browser', `${(png.length / 1024).toFixed(0)} KB`);
+  await ctx.route('https://x.com/**', r => r.fulfill({ status: 200, contentType: 'text/html', body: 'stub' })); // never hit X
+  const popup = ctx.waitForEvent('page');
+  await page.getByRole('button', { name: 'Post on X' }).click();
+  const xPage = await popup;
+  await xPage.waitForURL(/x\.com\/intent/, { timeout: 15000 }).catch(() => {});
+  const xUrl = decodeURIComponent(xPage.url());
+  await xPage.close();
+  check(xUrl.startsWith('https://x.com/intent/post') && /public key is already out/.test(xUrl) && /bunkereth\.xyz/.test(xUrl), 'share card: "Post on X" opens a prefilled post (exposed wording + site link)', xUrl.slice(0, 90));
+  await page.locator('.card-modal .x').click();
   await page.locator('.wtbl tbody tr.r').first().click();
   await page.waitForFunction(() => document.querySelectorAll('.results .grp').length === 1, null, { timeout: 10000 });
   check(true, 'board row click scans that holder');

@@ -6,6 +6,7 @@ import { fmtAmt, fmtUsd } from '../lib/format';
 import { assetPrice, assetUsd, readBtc, readSol, sumUsd, type Asset, type BtcRead, type SolRead } from '../lib/scan';
 import { useEvmAddress, type ChainState } from '../lib/useEvmAddress';
 import { Chip, CopyBtn, Logo, Spinner } from './ui';
+import { ShareButton, type CardData } from './ShareCard';
 
 export interface Totals {
   status: Status;
@@ -100,6 +101,7 @@ function GroupHead({
   value,
   explorer,
   extra,
+  share,
 }: {
   verdict: Verdict;
   address: string;
@@ -108,6 +110,8 @@ function GroupHead({
   value: number;
   explorer?: string;
   extra?: React.ReactNode;
+  /** card data once the verdict is final; null while loading; undefined = no share button */
+  share?: CardData | null;
 }) {
   const [why, setWhy] = useState(false);
   return (
@@ -123,6 +127,7 @@ function GroupHead({
         )}
         <span className="badge">{kind}</span>
         <CopyBtn text={address} />
+        {share !== undefined && <ShareButton data={share} />}
       </div>
       <div className="grp-risk">
         <small>at risk</small>
@@ -180,6 +185,14 @@ function EvmGroup({ address, rk, report }: { address: `0x${string}`; rk: string;
   const empty = rows.filter((r) => !active.includes(r));
   const value = rows.reduce((t, r) => t + r.value, 0);
   const atRisk = verdict.status === 'exposed' ? value : 0;
+  const settled = rows.every(r => r.s && r.s.status !== 'loading');
+  const share: CardData | null = settled && (verdict.status === 'exposed' || verdict.status === 'hidden')
+    ? {
+        status: verdict.status, address, kind: 'EVM',
+        detail: verdict.status === 'hidden' ? `Never signed on ${CHAINS.length} chains` : signedOn.length ? `Signed on ${signedOn.slice(0, 3).join(', ')}${signedOn.length > 3 ? ` +${signedOn.length - 3} more` : ''}` : 'Public key on-chain',
+        usd: verdict.status === 'exposed' ? atRisk : value,
+      }
+    : null;
 
   useEffect(() => {
     report(rk, { status: verdict.status, value, atRisk });
@@ -194,6 +207,7 @@ function EvmGroup({ address, rk, report }: { address: `0x${string}`; rk: string;
         atRisk={atRisk}
         value={value}
         explorer={addrUrl(1, address)}
+        share={share}
         extra={
           safe && (
             <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -408,7 +422,14 @@ function BtcGroup({ address, rk, btcType, report }: { address: string; rk: strin
   useEffect(() => report(rk, { status: verdict.status, value, atRisk }), [rk, report, verdict.status, value, atRisk]);
   return (
     <div className="grp">
-      <GroupHead verdict={verdict} address={address} kind={btcLabel(btcType)} atRisk={atRisk} value={value} explorer={`https://mempool.space/address/${address}`} />
+      <GroupHead
+        verdict={verdict} address={address} kind={btcLabel(btcType)} atRisk={atRisk} value={value} explorer={`https://mempool.space/address/${address}`}
+        share={st.s === 'done' && (verdict.status === 'exposed' || verdict.status === 'hidden') ? {
+          status: verdict.status, address, kind: btcLabel(btcType),
+          detail: btcType === 'p2tr' ? 'Taproot: the public key is in the address' : verdict.status === 'exposed' ? 'Spent from before: key revealed on-chain' : 'Never spent from: key still behind a hash',
+          usd: verdict.status === 'exposed' ? atRisk : value,
+        } : null}
+      />
       <table className="tbl">
         <tbody>
           <tr className="r">
@@ -479,7 +500,10 @@ function SolGroup({ address, rk, report }: { address: string; rk: string; report
   const shown = d ? d.tokens.slice(0, 2) : [];
   return (
     <div className="grp">
-      <GroupHead verdict={verdict} address={address} kind="Solana · ed25519" atRisk={value} value={value} explorer={`https://solscan.io/account/${address}`} />
+      <GroupHead
+        verdict={verdict} address={address} kind="Solana · ed25519" atRisk={value} value={value} explorer={`https://solscan.io/account/${address}`}
+        share={st.s !== 'loading' ? { status: 'exposed', address, kind: 'Solana', detail: 'Solana: the address is the public key', usd: value } : null}
+      />
       <table className="tbl">
         <tbody>
           <tr className="r">
