@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vercel/
+contracts/out/
+contracts/cache/
+*.local
+.env*
+keys/
