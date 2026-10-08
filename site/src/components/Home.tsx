@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getAddress, keccak256, toBytes, type Hex } from 'viem';
 import { client } from '../chains';
-import { DRAKE_TWEET, TOKEN_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
+import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
 import { parseAddressList } from '../lib/exposure';
 import { fmtAmt, fmtUsd, short } from '../lib/format';
 import * as wots from '../lib/wots.js';
@@ -360,6 +360,7 @@ function Coin() {
                 <a className="btn" href={`https://dexscreener.com/ethereum/${t}`} target="_blank" rel="noreferrer">Chart</a>
                 <a className="btn" href={`https://etherscan.io/token/${t}`} target="_blank" rel="noreferrer">Etherscan</a>
                 <a className="btn" href={X_URL} target="_blank" rel="noreferrer">{X_HANDLE}</a>
+                {GITHUB_URL && <a className="btn" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>}
               </div>
             </div>
           ) : (

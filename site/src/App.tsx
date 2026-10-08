@@ -5,7 +5,7 @@ import { Move } from './components/Move';
 import { Ticker } from './components/Ticker';
 import { VaultPanel } from './vault/VaultPanel';
 import { CHAIN_BY_ID } from './chains';
-import { DRAKE_TWEET, X_HANDLE, X_URL } from './config';
+import { DRAKE_TWEET, GITHUB_URL, X_HANDLE, X_URL } from './config';
 import { short } from './lib/format';
 import { useWallet } from './wallet';
 
@@ -127,6 +127,7 @@ function Footer() {
         </span>
         <span className="grow" />
         <a className="dim2" href={X_URL} target="_blank" rel="noreferrer">{X_HANDLE} on X ↗</a>
+        {GITHUB_URL && <a className="dim2" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>}
         <a className="dim2" href={DRAKE_TWEET} target="_blank" rel="noreferrer">the bunker mode post ↗</a>
       </div>
     </footer>

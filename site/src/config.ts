@@ -14,4 +14,4 @@ export const X_URL = 'https://x.com/BunkerCoinEth';
 export const X_HANDLE = '@BunkerCoinEth';
 
 /** Public source repo (null until published). */
-export const GITHUB_URL: string | null = null;
+export const GITHUB_URL: string | null = "https://github.com/BunkerERC/bunker";
