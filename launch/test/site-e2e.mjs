@@ -125,11 +125,11 @@ async function main() {
   await page.locator('.ticker').getByText(/\$\d/).first().waitFor({ timeout: 20000 });
   await page.locator('.ticker').getByText(/#\d/).waitFor({ timeout: 20000 });
   check(true, 'ticker: live ETH price + block', (await page.locator('.ticker-in').innerText()).replace(/\s+/g, ' ').slice(0, 80));
-  await page.locator('.board-tbl tbody tr.r').first().waitFor({ timeout: 30000 });
-  await page.waitForFunction(() => document.querySelectorAll('.board-tbl tbody tr.r .chip.pending').length === 0, null, { timeout: 45000 });
-  const boardRows = await page.locator('.board-tbl tbody tr.r').count();
-  const stat = await page.locator('.board-stats').innerText();
-  check(boardRows === 20 && /\d+ \/ 20/.test(stat), 'board: 20 largest plain-key holders, every row classified', stat.replace(/\s+/g, ' '));
+  await page.locator('.wtbl tbody tr.r').first().waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.wtbl tbody tr.r .state')].every(e => !e.classList.contains('dim')), null, { timeout: 45000 });
+  const boardRows = await page.locator('.wtbl tbody tr.r').count();
+  const stat = await page.locator('.stats').innerText();
+  check(boardRows === 20 && /\d+\/20/.test(stat), 'board: 20 largest plain-key holders, every row classified', stat.replace(/\s+/g, ' '));
 
   // ---------------------------------------------------------------- scan: every address type
   const freshEvm = fresh();
@@ -149,7 +149,7 @@ async function main() {
   check(verdict(4) === 'exposed', 'scan: Solana = always exposed');
   check(verdict(5) === 'invalid', 'scan: garbage input flagged invalid');
   check(page.url().includes('#scan?a='), 'scan: shareable URL updated');
-  await page.locator('.board-tbl tbody tr.r').first().click();
+  await page.locator('.wtbl tbody tr.r').first().click();
   await page.waitForFunction(() => document.querySelectorAll('.results .grp').length === 1, null, { timeout: 10000 });
   check(true, 'board row click scans that holder');
 

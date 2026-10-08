@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getAddress, keccak256, toBytes, type Hex } from 'viem';
 import { client } from '../chains';
-import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
+import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, VAULT_ADDRESS, X_URL } from '../config';
 import { parseAddressList } from '../lib/exposure';
 import { fmtAmt, fmtUsd, short } from '../lib/format';
 import * as wots from '../lib/wots.js';
 import { usePrices } from '../prices';
 import { useWallet } from '../wallet';
 import { MAX_ADDR, ScanResults } from './Scan';
-import { Chip, CopyBtn } from './ui';
+import { CopyBtn } from './ui';
 
 const EXAMPLES: { label: string; addr: string }[] = [
   { label: 'vitalik.eth', addr: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045' },
@@ -18,23 +18,28 @@ const EXAMPLES: { label: string; addr: string }[] = [
 ];
 
 export function Home({ list, onScan }: { list: string[]; onScan: (l: string[]) => void }) {
+  const board = useBoard();
   return (
     <>
-      <section className={`hero${list.length ? ' has-results' : ''}`} id="scan">
-        <div className="hero-main">
-          <h1 className="display hero-h">Has your wallet already shown its key?</h1>
-          <p className="hero-p">
-            An address is a hash of a public key. The key stays hidden until the address signs something, then it sits
-            on-chain for good. If ECDSA breaks, those keys go first. Paste any address to see where you stand.
+      <section className={`hx${list.length ? ' hx-results' : ''}`} id="scan">
+        <div className="hx-img" aria-hidden="true" />
+        <div className="wrap hx-in">
+          <div className="hx-kicker">Enter bunker mode.</div>
+          <h1 className="hx-h">Your key is<br />already out.</h1>
+          <p className="hx-p">
+            Every wallet that ever signed has its public key on-chain. If ECDSA breaks, those go first.{' '}
+            <a href={DRAKE_TWEET} target="_blank" rel="noreferrer">Why now ↗</a>
           </p>
           <ScanBar onScan={onScan} current={list} />
         </div>
-        <Lifecycle />
       </section>
-      <div className="wrap-results">
-        <ScanResults list={list} />
-      </div>
-      <Board onScan={onScan} />
+      {list.length > 0 && (
+        <div className="wrap hx-res">
+          <ScanResults list={list} />
+        </div>
+      )}
+      <Stats board={board} />
+      <Board board={board} onScan={onScan} />
       <Tools />
       <Coin />
       <Faq />
@@ -58,7 +63,7 @@ function ScanBar({ onScan, current }: { onScan: (l: string[]) => void; current: 
           className="scan-input"
           value={text}
           onChange={e => setText(e.target.value)}
-          placeholder="0x…, bc1…, or a Solana address. Several? Separate with commas."
+          placeholder="Paste a wallet: 0x…, bc1…, or Solana"
           spellCheck={false}
           autoComplete="off"
           aria-label="Addresses to scan"
@@ -66,7 +71,7 @@ function ScanBar({ onScan, current }: { onScan: (l: string[]) => void; current: 
         <button className="btn primary scan-go" type="submit">Scan</button>
       </form>
       <div className="scan-try">
-        <span className="dim">try</span>
+        <span>try</span>
         {w.address && (
           <button className="linkish" onClick={() => { setText(w.address!); go(w.address!); }}>my wallet</button>
         )}
@@ -78,47 +83,7 @@ function ScanBar({ onScan, current }: { onScan: (l: string[]) => void; current: 
   );
 }
 
-// ------------------------------------------------------------------ lifecycle diagram
-function Lifecycle() {
-  return (
-    <aside className="life" aria-label="How a key gets exposed">
-      <div className="life-step">
-        <div className="life-dot ok" />
-        <div className="life-body">
-          <div className="life-h">Fresh address <Chip status="hidden" /></div>
-          <code className="life-code">address = keccak256(pubkey)[12:]</code>
-          <p>Only a 20-byte hash is public. Nothing to attack.</p>
-        </div>
-      </div>
-      <div className="life-step">
-        <div className="life-dot bad" />
-        <div className="life-body">
-          <div className="life-h">First signature <Chip status="exposed" /></div>
-          <code className="life-code">ecrecover(msg, r, s, v) → pubkey</code>
-          <p>Every transaction, permit or login signature lets anyone rebuild the 64-byte public key.</p>
-        </div>
-      </div>
-      <div className="life-step">
-        <div className="life-dot warn" />
-        <div className="life-body">
-          <div className="life-h">If ECDSA breaks</div>
-          <code className="life-code">pubkey → private key</code>
-          <p>Fast key recovery turns every exposed address into an open one. Hidden keys still need a hash preimage.</p>
-        </div>
-      </div>
-      <div className="life-step">
-        <div className="life-dot ok" />
-        <div className="life-body">
-          <div className="life-h">Bunker mode</div>
-          <p>Move to a fresh address and sign nothing with it. Signed once? Move the rest to the next one.</p>
-          <a className="life-src" href={DRAKE_TWEET} target="_blank" rel="noreferrer">Justin Drake's call, Oct 7 ↗</a>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-// ------------------------------------------------------------------ live board: biggest plain keys on Ethereum
+// ------------------------------------------------------------------ live board data (shared by the stats strip and the table)
 interface BoardRow {
   hash: Hex;
   label?: string;
@@ -135,19 +100,19 @@ interface BsAddr {
   metadata?: { tags?: { tagType: string; name: string }[] } | null;
 }
 const BOARD_SIZE = 20;
-
-function labelOf(a: BsAddr): string | undefined {
-  const names = (a.metadata?.tags ?? []).filter(t => t.tagType === 'name').map(t => t.name);
-  return names[0] ?? a.ens_domain_name ?? undefined;
-}
+const labelOf = (a: BsAddr) => (a.metadata?.tags ?? []).filter(t => t.tagType === 'name').map(t => t.name)[0] ?? a.ens_domain_name ?? undefined;
 const rowExposed = (r: BoardRow) => (r.nonce ?? 0) > 0 || !!r.code?.toLowerCase().startsWith('0xef0100');
 
-function Board({ onScan }: { onScan: (l: string[]) => void }) {
-  const prices = usePrices();
+interface BoardState {
+  rows: BoardRow[] | null;
+  err: boolean;
+  retry: () => void;
+}
+
+function useBoard(): BoardState {
   const [rows, setRows] = useState<BoardRow[] | null>(null);
   const [err, setErr] = useState(false);
   const [n, setN] = useState(0);
-
   useEffect(() => {
     let dead = false;
     setErr(false);
@@ -177,91 +142,99 @@ function Board({ onScan }: { onScan: (l: string[]) => void }) {
     })();
     return () => { dead = true; };
   }, [n]);
+  return { rows, err, retry: () => setN(x => x + 1) };
+}
 
-  const stats = useMemo(() => {
-    if (!rows) return null;
-    const done = rows.filter(r => r.nonce !== undefined);
+// ------------------------------------------------------------------ stats strip
+function Stats({ board }: { board: BoardState }) {
+  const prices = usePrices();
+  const s = useMemo(() => {
+    const done = (board.rows ?? []).filter(r => r.nonce !== undefined);
     const exposed = done.filter(rowExposed);
-    const eth = exposed.reduce((s, r) => s + r.eth, 0);
-    return { done: done.length, total: rows.length, exposed: exposed.length, eth };
-  }, [rows]);
-
+    return { done: done.length, total: board.rows?.length ?? 0, exposed: exposed.length, eth: exposed.reduce((t, r) => t + r.eth, 0) };
+  }, [board.rows]);
+  const ready = s.done > 0;
   return (
-    <section className="sec board" id="board">
-      <div className="sec-head">
-        <h2 className="display sec-h">The biggest keys on Ethereum are already public</h2>
-        <p className="sec-p">
-          The {BOARD_SIZE} largest ETH holders that are plain keys, not contracts. Live from the chain; labels from
-          Blockscout. Click any row to scan it.
+    <section className="stats" aria-label="Live numbers">
+      <div className="wrap stats-in">
+        <div className="stat">
+          <span className="stat-n red">{ready ? `${s.exposed}/${s.total}` : '—'}</span>
+          <span className="stat-l">biggest ETH wallets already exposed their key</span>
+        </div>
+        <div className="stat">
+          <span className="stat-n">{ready ? fmtAmt(s.eth) : '—'}</span>
+          <span className="stat-l">ETH sitting on those public keys</span>
+        </div>
+        <div className="stat">
+          <span className="stat-n">{ready && prices.eth ? fmtUsd(s.eth * prices.eth) : '—'}</span>
+          <span className="stat-l">at today's price</span>
+        </div>
+        <div className="stat">
+          <span className="stat-n acc">0</span>
+          <span className="stat-l">ECDSA keys that can open the vault</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ board table
+function Board({ board, onScan }: { board: BoardState; onScan: (l: string[]) => void }) {
+  const prices = usePrices();
+  const { rows, err, retry } = board;
+  return (
+    <section className="wrap blk board" id="board">
+      <div className="blk-head">
+        <h2 className="h2">The whales already signed.</h2>
+        <p className="lede">
+          The {BOARD_SIZE} largest ETH holders that are plain keys, live from the chain. Labels from Blockscout. Tap a row to scan it.
         </p>
       </div>
-      <div className="board-stats">
-        <div>
-          <span className="stat-k">exposed</span>
-          <span className="stat-v red">{stats && stats.done ? `${stats.exposed} / ${stats.done}` : '—'}</span>
-        </div>
-        <div>
-          <span className="stat-k">ETH on exposed keys</span>
-          <span className="stat-v">{stats && stats.done ? fmtAmt(stats.eth) : '—'}</span>
-        </div>
-        <div>
-          <span className="stat-k">at today's price</span>
-          <span className="stat-v">{stats && stats.done && prices.eth ? fmtUsd(stats.eth * prices.eth) : '—'}</span>
-        </div>
-      </div>
-      <div className="panel">
-        {err ? (
-          <div className="panel-body dim">
-            Blockscout didn't answer. <button className="linkish" onClick={() => setN(x => x + 1)}>retry</button>
-          </div>
-        ) : (
-          <table className="tbl board-tbl">
-            <thead>
-              <tr>
-                <th className="b-rank">#</th>
-                <th>holder</th>
-                <th className="b-addr">address</th>
-                <th className="right">ETH</th>
-                <th className="right b-usd">USD</th>
-                <th className="right b-sig">signatures</th>
-                <th className="b-key">key</th>
-              </tr>
-            </thead>
-            <tbody>
-              {!rows
-                ? Array.from({ length: 8 }, (_, i) => (
-                  <tr key={i} className="skel-row">
-                    <td colSpan={7}><span className="skel" style={{ width: `${88 - i * 6}%` }} /></td>
-                  </tr>
-                ))
-                : rows.map((r, i) => (
-                  <tr
-                    key={r.hash}
-                    className="r click"
-                    style={{ animationDelay: `${i * 25}ms` }}
-                    onClick={() => { onScan([r.hash]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-                  >
-                    <td className="b-rank dim mono">{i + 1}</td>
-                    <td className="b-label">{r.label ?? <span className="dim">unlabeled</span>}</td>
-                    <td className="b-addr mono dim2">{short(r.hash, 5)}</td>
+      {err ? (
+        <p className="dim">Blockscout didn't answer. <button className="linkish" onClick={retry}>retry</button></p>
+      ) : (
+        <table className="wtbl">
+          <thead>
+            <tr>
+              <th className="w-rank">#</th>
+              <th>holder</th>
+              <th className="w-addr">address</th>
+              <th className="right">ETH</th>
+              <th className="right w-usd">USD</th>
+              <th className="right w-sig">signed</th>
+              <th className="w-key">key</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!rows
+              ? Array.from({ length: 8 }, (_, i) => (
+                <tr key={i} className="skel-row"><td colSpan={7}><span className="skel" style={{ width: `${86 - i * 6}%` }} /></td></tr>
+              ))
+              : rows.map((r, i) => {
+                const known = r.nonce !== undefined;
+                const exposed = known && rowExposed(r);
+                return (
+                  <tr key={r.hash} className="r click" onClick={() => { onScan([r.hash]); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                    <td className="w-rank mono">{String(i + 1).padStart(2, '0')}</td>
+                    <td className="w-label">{r.label ?? <span className="dim">unlabeled</span>}</td>
+                    <td className="w-addr mono">{short(r.hash, 5)}</td>
                     <td className="num">{fmtAmt(r.eth)}</td>
-                    <td className="num b-usd dim2">{prices.eth ? fmtUsd(r.eth * prices.eth) : '—'}</td>
-                    <td className="num b-sig dim2">{r.nonce === undefined ? (r.failed ? '?' : <span className="skel sm" />) : r.nonce.toLocaleString()}</td>
-                    <td className="b-key">
-                      {r.nonce === undefined
-                        ? (r.failed ? <Chip status="warn" label="⚠︎ retry" /> : <Chip status="pending" />)
-                        : rowExposed(r) ? <Chip status="exposed" /> : <Chip status="hidden" label="✓ never signed" />}
+                    <td className="num w-usd dim2">{prices.eth ? fmtUsd(r.eth * prices.eth) : '—'}</td>
+                    <td className="num w-sig dim2">{known ? r.nonce!.toLocaleString() : r.failed ? '?' : <span className="skel sm" />}</td>
+                    <td className="w-key">
+                      {!known
+                        ? <span className="state dim">{r.failed ? 'retry' : 'reading'}</span>
+                        : exposed ? <span className="state bad"><i />exposed</span> : <span className="state ok"><i />never signed</span>}
                     </td>
                   </tr>
-                ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                );
+              })}
+          </tbody>
+        </table>
+      )}
       <p className="fine">
-        Bitcoin holders: Project Eleven's{' '}
-        <a href="https://bitcoin-risq-list.projecteleven.com" target="_blank" rel="noreferrer">risq list</a>{' '}
-        tracks exposed BTC. Exposure is a fact about the chain, not a claim that anyone's funds are in danger today.
+        Bitcoin: Project Eleven's <a href="https://bitcoin-risq-list.projecteleven.com" target="_blank" rel="noreferrer">risq list</a> tracks exposed BTC.
+        Exposure is a fact about the chain, not a claim that anyone's funds are in danger today.
       </p>
     </section>
   );
@@ -270,46 +243,37 @@ function Board({ onScan }: { onScan: (l: string[]) => void }) {
 // ------------------------------------------------------------------ tools
 function Tools() {
   return (
-    <section className="sec tools">
-      <div className="tool">
-        <div className="tool-copy">
-          <span className="tool-tag">tool 01</span>
-          <h3 className="display tool-h">Move: sweep into a fresh address</h3>
-          <p>
-            Connect the wallet you want to retire, paste a new address from the same seed that has never signed, and
-            move everything chain by chain. Tokens first, ETH last minus gas. One confirmation when your wallet
-            batches, otherwise one per asset.
-          </p>
-          <ul className="tool-list">
-            <li>Checks the destination never signed on all 7 chains</li>
-            <li>Ethereum, Base, Arbitrum, Optimism, Polygon, BNB, Robinhood Chain</li>
-            <li>Plain transfers signed in your wallet. No contract, no custody</li>
-          </ul>
-          <a className="btn primary" href="#move">Open Move</a>
-        </div>
-        <div className="tool-demo" aria-hidden="true">
-          <div className="demo-head"><span className="dim">example · Ethereum</span><span className="mono">sweep log</span></div>
-          <div className="demo-line"><span className="green">✓</span> USDC 18,240.55 → bunker<span className="dim mono">0x8f2c…a91e</span></div>
-          <div className="demo-line"><span className="green">✓</span> WBTC 0.4112 → bunker<span className="dim mono">0x1b07…44d0</span></div>
-          <div className="demo-line"><span className="green">✓</span> ETH 6.2391 (all but gas) → bunker<span className="dim mono">0xe4f3…44c3</span></div>
-          <div className="demo-foot">source keeps <span className="mono">0.00004 ETH</span> of dust. Bunker: <span className="green">never signed</span></div>
-        </div>
+    <section className="wrap blk tools2">
+      <div className="blk-head">
+        <h2 className="h2">Three ways in.</h2>
       </div>
-      <div className="tool tool-flip">
-        <div className="tool-copy">
-          <span className="tool-tag">tool 02</span>
-          <h3 className="display tool-h">Vault: no ECDSA can move it</h3>
-          <p>
-            BunkerVault holds ETH and tokens for accounts controlled by Winternitz one-time signatures over keccak256,
-            the hash-based crypto Drake points to as the exit. You keep a 24-word bunker phrase; each withdrawal burns
-            its key on-chain and rotates to the next.
+      <a className="tl" href="#scan" onClick={e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+        <span className="tl-w">Scan</span>
+        <span className="tl-d">See which of your addresses already leaked their public key. Seven EVM chains, Bitcoin and Solana. Read-only.</span>
+        <span className="tl-a" aria-hidden="true">↗</span>
+      </a>
+      <a className="tl" href="#move">
+        <span className="tl-w">Move</span>
+        <span className="tl-d">Sweep a wallet into a fresh address that has never signed. Tokens first, ETH last. One click per chain.</span>
+        <span className="tl-a" aria-hidden="true">↗</span>
+      </a>
+      <a className="tl" href="#vault">
+        <span className="tl-w">Vault</span>
+        <span className="tl-d">Park ETH and tokens behind hash-based one-time signatures. No ECDSA key can move them. Every key burns after one use.</span>
+        <span className="tl-a" aria-hidden="true">↗</span>
+      </a>
+      <div className="vx">
+        <div className="vx-copy">
+          <div className="hx-kicker">BunkerVault</div>
+          <h3 className="h2 vx-h">No ECDSA can move it.</h3>
+          <p className="lede">
+            Withdrawals are signed with Winternitz one-time keys over keccak256: the hash-only cryptography Drake points to as
+            the exit. Each signature commits to the next key, and the used key is burned on-chain. No owner. No upgrade. No fee.
           </p>
-          <ul className="tool-list">
-            <li>Any wallet can submit a withdrawal; it can't change recipients or amounts</li>
-            <li>No owner, no upgrade, no fee</li>
-            <li>About 200k-280k gas per withdrawal</li>
-          </ul>
-          <a className="btn primary" href="#vault">{VAULT_ADDRESS ? 'Open Vault' : 'See the vault'}</a>
+          <div className="row-gap">
+            <a className="btn primary" href="#vault">{VAULT_ADDRESS ? 'Open the vault' : 'See the vault'}</a>
+            <a className="btn ghost" href="#docs">How it works</a>
+          </div>
         </div>
         <WotsBars />
       </div>
@@ -346,40 +310,36 @@ export function WotsBars() {
 function Coin() {
   const t = TOKEN_ADDRESS;
   return (
-    <section className="sec coin" id="coin">
-      <div className="coin-grid">
-        <div>
-          <h2 className="display sec-h">$BUNKER</h2>
-          <p className="sec-p">The coin of bunker mode. On Ethereum, paired with ETH on Uniswap v4.</p>
-          {t ? (
-            <div className="coin-ca">
-              <code className="mono ca">{t}</code>
-              <CopyBtn text={t} />
-              <div className="coin-links">
-                <a className="btn primary" href={`https://app.uniswap.org/swap?chain=mainnet&outputCurrency=${t}`} target="_blank" rel="noreferrer">Buy on Uniswap</a>
-                <a className="btn" href={`https://dexscreener.com/ethereum/${t}`} target="_blank" rel="noreferrer">Chart</a>
-                <a className="btn" href={`https://etherscan.io/token/${t}`} target="_blank" rel="noreferrer">Etherscan</a>
-                <a className="btn" href={X_URL} target="_blank" rel="noreferrer">{X_HANDLE}</a>
-                {GITHUB_URL && <a className="btn" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>}
-              </div>
-            </div>
-          ) : (
-            <div className="coin-soon">
-              <span className="soon-dot" /> Launching on Ethereum. The contract address appears here at launch; anything
-              posted before that is not us.
-            </div>
-          )}
+    <section className="coin2" id="coin">
+      <div className="wrap coin2-in">
+        <div className="coin2-top">
+          <h2 className="coin2-h">$BUNKER</h2>
+          <div className="coin2-tags">
+            <span>0% tax</span><span>1B fixed supply</span><span>LP locked in the contract</span><span>no admin keys</span><span>verified</span>
+          </div>
         </div>
-        <dl className="facts">
-          <div><dt>supply</dt><dd className="mono">1,000,000,000 fixed</dd></div>
-          <div><dt>max wallet</dt><dd>2% at launch, switched off for good at block 26,144,084. It can never come back</dd></div>
-          <div><dt>admin</dt><dd>No mint, tax, pause or blacklist. The deployer's only remaining powers: none that touch balances or liquidity</dd></div>
-          <div><dt>permit()</dt><dd>Left out on purpose: $BUNKER never asks you for an off-chain signature</dd></div>
-          <div><dt>liquidity</dt><dd>All 1,000,000,000 went into the Uniswap v4 ETH pool (1% tier) and the position is held by the token contract itself. No function can remove it: locked forever</dd></div>
-          <div><dt>vault</dt><dd>{VAULT_ADDRESS
-            ? <a className="mono" href={`https://etherscan.io/address/${VAULT_ADDRESS}`} target="_blank" rel="noreferrer">{short(VAULT_ADDRESS, 6)}</a>
-            : 'BunkerVault deploys with the coin'}</dd></div>
-        </dl>
+        {t ? (
+          <>
+            <div className="ca">
+              <span className="ca-k">CA</span>
+              <code className="ca-v">{t}</code>
+              <CopyBtn text={t} />
+            </div>
+            <div className="row-gap">
+              <a className="btn primary" href={`https://app.uniswap.org/swap?chain=mainnet&outputCurrency=${t}`} target="_blank" rel="noreferrer">Buy on Uniswap</a>
+              <a className="btn" href={`https://dexscreener.com/ethereum/${t}`} target="_blank" rel="noreferrer">Chart</a>
+              <a className="btn" href={`https://etherscan.io/token/${t}`} target="_blank" rel="noreferrer">Etherscan</a>
+              <a className="btn" href={X_URL} target="_blank" rel="noreferrer">X</a>
+              {GITHUB_URL && <a className="btn" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub</a>}
+            </div>
+          </>
+        ) : (
+          <p className="lede">Launching on Ethereum. The contract address appears here at launch.</p>
+        )}
+        <p className="fine">
+          The token minted its whole supply into one Uniswap v4 position that the contract itself owns. There is no function
+          that removes it. No permit(): $BUNKER never asks you for an off-chain signature.
+        </p>
       </div>
     </section>
   );
@@ -390,18 +350,16 @@ const QA: [string, string][] = [
   ['Why does a transaction expose my key?', 'The network checks who signed by rebuilding the public key from the signature. Once you have signed anything, anyone can do the same.'],
   ['Is this an emergency?', 'No. Nobody has shown an ECDSA break. Moving to a fresh address is cheap insurance, and a calm migration beats a rushed one.'],
   ['Can I keep my seed phrase?', 'Yes. A new account index from the same seed is a new key pair. What matters is that the new address never signs.'],
-  ['Do logins and permits count?', 'Yes. Sign-in messages, Permit/Permit2 approvals, gasless swaps and NFT listings are signatures too. A bunker signs nothing.'],
-  ['Why is Solana always exposed?', 'A Solana address is the ed25519 public key itself. There is no hash in front of it to hide behind.'],
-  ['How is the vault different?', 'It never trusts ECDSA. Withdrawals are approved by hash-based one-time signatures, and every key is burned after one use.'],
+  ['Do logins and permits count?', 'Yes. Sign-in messages, permits, gasless swaps and NFT listings are signatures too. A bunker signs nothing.'],
 ];
 
 function Faq() {
   return (
-    <section className="sec faq">
-      <h2 className="display sec-h">Questions</h2>
-      <div className="qa">
+    <section className="wrap blk faq2">
+      <div className="blk-head"><h2 className="h2">Questions.</h2></div>
+      <div className="qa2">
         {QA.map(([q, a]) => (
-          <div key={q} className="qa-item">
+          <div key={q} className="qa2-i">
             <h4>{q}</h4>
             <p>{a}</p>
           </div>

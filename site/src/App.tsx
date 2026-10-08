@@ -62,7 +62,7 @@ export default function App() {
       <a className="skip" href="#main">Skip to content</a>
       <Ticker />
       <Header route={route} />
-      <main className="wrap" id="main">
+      <main className={route.page === 'home' ? 'home' : 'wrap'} id="main">
         {route.page === 'home' && <Home list={route.addrs} onScan={scan} />}
         {route.page === 'move' && <Move />}
         {route.page === 'docs' && <Docs />}
@@ -89,7 +89,7 @@ function Header({ route }: { route: Route }) {
   return (
     <header className="top">
       <div className="top-in">
-        <a className="mark" href="#scan" aria-label="BUNKER home">BUNKER</a>
+        <a className="mark" href="#scan" aria-label="BUNKER home"><img src="/logo-mark.png" alt="" width="30" height="18" />BUNKER</a>
         <nav className="tabs" aria-label="Sections">
           {NAV.map(n => (
             <a key={n.href} href={n.href} className={`tab${active(n) ? ' on' : ''}`} aria-current={active(n) ? 'page' : undefined}>
@@ -120,15 +120,16 @@ function Footer() {
   return (
     <footer className="foot">
       <div className="wrap foot-in">
-        <span className="mark sm">BUNKER</span>
+        <span className="mark sm"><img src="/logo-mark.png" alt="" width="22" height="13" />BUNKER</span>
         <span className="dim">
           Not financial advice. Open tools with no custody: every move is signed in your own wallet or browser. The
           vault contract has not had an external audit.
         </span>
-        <span className="grow" />
-        <a className="dim2" href={X_URL} target="_blank" rel="noreferrer">{X_HANDLE} on X ↗</a>
-        {GITHUB_URL && <a className="dim2" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>}
-        <a className="dim2" href={DRAKE_TWEET} target="_blank" rel="noreferrer">the bunker mode post ↗</a>
+        <span className="foot-links">
+          <a className="dim2" href={X_URL} target="_blank" rel="noreferrer">{X_HANDLE} ↗</a>
+          {GITHUB_URL && <a className="dim2" href={GITHUB_URL} target="_blank" rel="noreferrer">GitHub ↗</a>}
+          <a className="dim2" href={DRAKE_TWEET} target="_blank" rel="noreferrer">bunker mode post ↗</a>
+        </span>
       </div>
     </footer>
   );
