@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { fmtUsd } from '../lib/format';
 
 /** What a scan found for one address, as it goes on the card. */
@@ -153,47 +154,78 @@ export async function drawCard(canvas: HTMLCanvasElement, d: CardData) {
   ctx.textAlign = 'left';
 }
 
+/** Post text; share targets add the link to this scan after it. */
 export function postText(d: CardData) {
   const money = d.usd >= 1 ? fmtUsd(d.usd) : '';
   return d.status === 'exposed'
-    ? `my wallet's public key is already out${money ? `. ${money} sitting on an exposed key` : ''}.\n\nentering bunker mode → ${SITE}\n\n$BUNKER`
-    : `my wallet never signed. public key still hidden behind a hash${money ? `, ${money} safe for now` : ''}.\n\nscan yours → ${SITE}\n\n$BUNKER`;
+    ? `my wallet's public key is already out${money ? `. ${money} sitting on an exposed key` : ''}.\n\nentering bunker mode $BUNKER\n\nscan yours:`
+    : `my wallet never signed. public key still hidden behind a hash${money ? `, ${money} safe for now` : ''}.\n\nstaying in the bunker $BUNKER\n\nscan yours:`;
 }
+
+/** Link to this exact scan (the site opens with the address already scanned). */
+export const scanLink = (d: CardData) => `https://${SITE}/#scan?a=${d.address}`;
 
 // ------------------------------------------------------------------ button + modal
 export function ShareButton({ data }: { data: CardData | null }) {
-  const [open, setOpen] = useState(false);
+  // freeze the data when opened: the scan keeps re-rendering (prices, chains) and must not redraw the card
+  const [snap, setSnap] = useState<CardData | null>(null);
+  const close = useCallback(() => setSnap(null), []);
   return (
     <>
-      <button className="btn sm share-btn" disabled={!data} onClick={() => setOpen(true)} title={data ? 'Make a share card' : 'Waiting for the scan'}>
-        share card
+      <button className="btn sm share-btn" disabled={!data} onClick={() => data && setSnap({ ...data })} title={data ? 'Share this result' : 'Waiting for the scan'}>
+        share
       </button>
-      {open && data && <ShareModal data={data} onClose={() => setOpen(false)} />}
+      {snap && <ShareModal data={snap} onClose={close} />}
     </>
   );
 }
 
 function ShareModal({ data, onClose }: { data: CardData; onClose: () => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
+  const [img, setImg] = useState('');
   const [msg, setMsg] = useState('');
   const [intent, setIntent] = useState('');
+  const [copied, setCopied] = useState(false);
 
+  // draw once, off-screen, then show the finished PNG
   useEffect(() => {
     let dead = false;
-    const c = ref.current!;
+    let url = '';
+    const c = document.createElement('canvas');
     drawCard(c, data)
       .then(() => new Promise<Blob | null>(res => c.toBlob(res, 'image/png')))
-      .then(b => { if (!dead) setBlob(b); })
+      .then(b => {
+        if (dead || !b) return;
+        url = URL.createObjectURL(b);
+        setBlob(b);
+        setImg(url);
+      })
       .catch(() => { if (!dead) setMsg('Could not draw the card in this browser.'); });
+    return () => { dead = true; if (url) URL.revokeObjectURL(url); };
+  }, [data]);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    return () => { dead = true; window.removeEventListener('keydown', onKey); };
-  }, [data, onClose]);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
 
   const text = postText(data);
+  const link = scanLink(data);
   const file = blob ? new File([blob], `bunker-${data.status}-${data.address.slice(0, 8)}.png`, { type: 'image/png' }) : null;
-  const xUrl = `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
+  const xUrl = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(link)}`;
+  const tgUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text.replace(/\s*scan yours:$/, ''))}`;
+
+  const download = () => {
+    if (!file) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
 
   const post = async () => {
     if (!file) return;
@@ -201,9 +233,9 @@ function ShareModal({ data, onClose }: { data: CardData; onClose: () => void }) 
     // phones: the share sheet hands the image straight to the X app
     const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
     if (nav.canShare?.({ files: [file] }) && matchMedia('(pointer: coarse)').matches) {
-      try { await navigator.share({ files: [file], text }); return; } catch (e) { if ((e as Error).name === 'AbortError') return; }
+      try { await navigator.share({ files: [file], text: `${text} ${link}` }); return; } catch (e) { if ((e as Error).name === 'AbortError') return; }
     }
-    // desktop: copy the image, open the post, paste
+    // desktop: X can't take an image from a link, so copy it, open the post, paste
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': file })]);
       setMsg('Card copied. Paste it into the post (Ctrl+V / ⌘V).');
@@ -216,31 +248,33 @@ function ShareModal({ data, onClose }: { data: CardData; onClose: () => void }) 
     else setIntent(xUrl);
   };
 
-  const download = () => {
-    if (!file) return;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(file);
-    a.download = file.name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  };
+  const copyLink = () => navigator.clipboard?.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1400); }, () => {});
 
-  return (
+  // portal to <body>: the scan results animate with a transform, which would trap a fixed overlay inside them
+  return createPortal(
     <div className="modal-back" onClick={onClose}>
-      <div className="modal card-modal" role="dialog" aria-label="Share card" onClick={e => e.stopPropagation()}>
+      <div className="modal card-modal" role="dialog" aria-label="Share your scan" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
           <span>Share your scan</span>
           <button className="x" onClick={onClose} aria-label="Close">×</button>
         </div>
-        <canvas ref={ref} className="card-canvas" width={W} height={H} />
+        <div className="card-frame">
+          {img ? <img className="card-img" src={img} width={W} height={H} alt={`BUNKER scan card: ${data.status.toUpperCase()}`} /> : <div className="card-wait">drawing the card…</div>}
+        </div>
         <div className="card-actions">
-          <button className="btn primary" disabled={!blob} onClick={post}>Post on X</button>
+          <button className="btn primary" disabled={!blob} onClick={post}>Post on X with the card</button>
           <button className="btn" disabled={!blob} onClick={download}>Download PNG</button>
-          <span className="grow" />
-          <span className="dim small">Made in your browser. Nothing is uploaded.</span>
+        </div>
+        <div className="card-links">
+          <span className="dim small">share link</span>
+          <a className="btn sm" href={xUrl} target="_blank" rel="noreferrer">Share on X</a>
+          <a className="btn sm" href={tgUrl} target="_blank" rel="noreferrer">Telegram</a>
+          <button className="btn sm" onClick={copyLink}>{copied ? 'copied' : 'Copy link'}</button>
         </div>
         {msg && <p className="small card-msg">{msg}{intent && <> <a href={intent} target="_blank" rel="noreferrer">Open X</a></>}</p>}
+        <p className="dim small card-note">The card is made in your browser. Nothing is uploaded.</p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

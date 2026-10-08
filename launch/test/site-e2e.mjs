@@ -154,6 +154,16 @@ async function main() {
   const sharePng = page.locator('.results .grp').first().locator('.share-btn');
   await page.waitForFunction(() => !document.querySelector('.results .grp .share-btn').disabled, null, { timeout: 90000 });
   await sharePng.click();
+  await page.locator('.card-img').waitFor({ timeout: 20000 });
+  const box = await page.evaluate(() => {
+    const m = document.querySelector('.card-modal').getBoundingClientRect();
+    return { top: m.top, bottom: m.bottom, left: m.left, right: m.right, onBody: document.querySelector('.modal-back').parentElement === document.body, vw: innerWidth, vh: innerHeight };
+  });
+  check(box.onBody && box.top >= 0 && box.left >= 0 && box.right <= box.vw && box.bottom <= box.vh, 'share card: popup sits on top of the page, fully on screen (not clipped by the results)', JSON.stringify(box));
+  const xHref = await page.getByRole('link', { name: 'Share on X' }).getAttribute('href');
+  const tgHref = await page.getByRole('link', { name: 'Telegram' }).getAttribute('href');
+  check(xHref.startsWith('https://x.com/intent/post?') && decodeURIComponent(xHref).includes('bunkereth.xyz/#scan?a=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045') && tgHref.startsWith('https://t.me/share/url?'),
+    'share card: Share on X + Telegram links carry this scan\'s link');
   const dl = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Download PNG' }).click();
   const png = readFileSync(await (await dl).path());
