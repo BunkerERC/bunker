@@ -1,6 +1,6 @@
 // BUNKER TRIPWIRE: deploy, fund, watch.
 //
-//   node launch/tripwire.mjs deploy  --rpc URL --keys DIR [--vault 0x..] [--seed 0] [--mainnet]
+//   node launch/tripwire.mjs deploy  --rpc URL --keys DIR [--vault 0x..] [--seed 0] [--mainnet]   (--vault required off mainnet)
 //   node launch/tripwire.mjs fund    --rpc URL --keys DIR --amount 0.5 [--tripwire 0x..] [--mainnet]
 //   node launch/tripwire.mjs status  --rpc URL [--keys DIR | --tripwire 0x..]
 //   node launch/tripwire.mjs keeper  --rpc URL[,URL2] --key FILE [--keys DIR | --tripwire 0x..] [--once] [--interval 6]
@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPublicClient, createWalletClient, http, fallback, getAddress, formatEther, parseEther, parseGwei, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, http, fallback, getAddress, formatEther, parseEther, parseGwei, parseAbi, keccak256, toBytes } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 
@@ -27,7 +27,13 @@ const MAINNET_VAULT = '0x39C71b635409b1f98dc632e08d3B29515ddb2727';
 
 const args = process.argv.slice(2);
 const cmd = args[0];
-const opt = (name, fallback) => { const i = args.indexOf('--' + name); return i > 0 ? args[i + 1] : fallback; };
+const opt = (name, fallback) => {
+  const i = args.indexOf('--' + name);
+  if (i < 0) return fallback;
+  const v = args[i + 1];
+  if (v === undefined || v.startsWith('--')) throw new Error(`--${name} needs a value`);
+  return v;
+};
 const flag = name => args.includes('--' + name);
 const isLocal = url => /^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(url);
 const stamp = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -46,7 +52,10 @@ function setup() {
   if (!rpc) throw new Error('--rpc is required');
   const urls = rpc.split(',').map(u => u.trim()).filter(Boolean); // several = fallback in order
   const transport = urls.length > 1 ? fallback(urls.map(u => http(u))) : http(urls[0]);
-  const local = isLocal(urls[0]);
+  // local only if EVERY endpoint is local: a fallback list must never slip a real-chain RPC past the --mainnet check
+  const localCount = urls.filter(isLocal).length;
+  if (localCount && localCount !== urls.length) throw new Error('--rpc mixes local and remote endpoints; use one kind');
+  const local = localCount === urls.length;
   if (!local && !flag('mainnet') && cmd !== 'status') throw new Error('This is real Ethereum mainnet. Add --mainnet to send real transactions.');
   const pub = createPublicClient({ chain: mainnet, transport, pollingInterval: local ? 100 : 2000 });
   const keys = opt('keys');
@@ -70,8 +79,16 @@ async function deploy() {
   const { pub, keys, recFile, wallet } = setup();
   if (!keys) throw new Error('--keys DIR is required');
   const wal = wallet(path.join(keys, 'owner.txt'));
-  const vault = getAddress(opt('vault', MAINNET_VAULT));
-  if ((await pub.getCode({ address: vault }) ?? '0x') === '0x') throw new Error(`no BunkerVault at ${vault}`);
+  const vaultOpt = opt('vault');
+  if (!vaultOpt && !flag('mainnet')) throw new Error('--vault 0x.. is required (the mainnet vault is only the default with --mainnet)');
+  const vault = getAddress(vaultOpt ?? MAINNET_VAULT);
+  // it must really be a BunkerVault: same domain tag and chain count
+  const vaultAbi = parseAbi(['function TAG() view returns (bytes32)', 'function CHAINS() view returns (uint256)']);
+  const [tag, chains] = await Promise.all([
+    pub.readContract({ address: vault, abi: vaultAbi, functionName: 'TAG' }),
+    pub.readContract({ address: vault, abi: vaultAbi, functionName: 'CHAINS' }),
+  ]).catch(() => [null, null]);
+  if (tag !== keccak256(toBytes('BunkerVault.execute.v1')) || chains !== 67n) throw new Error(`${vault} is not a BunkerVault`);
   const seed = parseEther(opt('seed', '0'));
   const a = art('BunkerTripwire');
   say(`deploying BunkerTripwire(vault ${vault}) from ${wal.account.address}${seed ? `, bounty ${formatEther(seed)} ETH` : ''}`);
