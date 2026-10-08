@@ -35,7 +35,7 @@ contract MockERC20 {
         return _t(msg.sender, to, v);
     }
 
-    function transferFrom(address f, address to, uint256 v) external returns (bool) {
+    function transferFrom(address f, address to, uint256 v) external virtual returns (bool) {
         if (allowance[f][msg.sender] != type(uint256).max) allowance[f][msg.sender] -= v;
         return _t(f, to, v);
     }

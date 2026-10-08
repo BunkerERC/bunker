@@ -15,3 +15,6 @@ export const X_HANDLE = '@BunkerCoinEth';
 
 /** Public source repo (null until published). */
 export const GITHUB_URL: string | null = "https://github.com/BunkerERC/bunker";
+
+/** BunkerTripwire (ECDSA canary + escape hatch into the vault) on Ethereum mainnet. null until deploy. */
+export const TRIPWIRE_ADDRESS: `0x${string}` | null = "0x20085f519465288A5f4ed8917EB6e73429B2EE39";

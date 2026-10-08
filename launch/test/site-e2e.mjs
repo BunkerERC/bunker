@@ -32,6 +32,7 @@ const check = (ok, what, detail = '') => {
   console.log(`[${ok ? ' OK ' : 'FAIL'}] ${what}${detail ? '  ' + detail : ''}`);
   if (!ok) throw new Error(`${what} ${detail}`);
 };
+const reverts = async fn => { try { await fn(); return false; } catch { return true; } };
 const procs = [];
 const startProc = (cmd, args, opts) => { const p = spawn(cmd, args, { stdio: 'ignore', ...opts }); procs.push(p); return p; };
 async function waitHttp(url, body) {
@@ -253,10 +254,52 @@ async function main() {
   const [onKey, onNonce] = await pub.readContract({ address: vault, abi: vaultAbi, functionName: 'accounts', args: [(await page.locator('.vault-head code').getAttribute('title'))] });
   check(Number(onNonce) === 2 && (await pub.readContract({ address: vault, abi: vaultAbi, functionName: 'spentKey', args: [onKey] })) === false, 'vault: on-chain nonce 2, current key unspent');
 
+  // ---------------------------------------------------------------- tripwire: arm, fund the bounty, trip, escape
+  const TWA = art('BunkerTripwire');
+  const twHash = await wal.deployContract({ abi: TWA.abi, bytecode: TWA.bytecode.object, args: [vault], value: parseEther('0.25') });
+  const tw = getAddress((await pub.waitForTransactionReceipt({ hash: twHash })).contractAddress);
+  const twRead = (functionName, args = []) => pub.readContract({ address: tw, abi: TWA.abi, functionName, args });
+  await fund('1', 400n);
+  await pub.waitForTransactionReceipt({ hash: await wal.writeContract({ address: token, abi: art('MockERC20').abi, functionName: 'mint', args: [user, parseEther('777')] }) });
+  const tq = `${q}&tripwire=${tw}`;
+  await page.goto(`${WEB}/${tq}#tripwire`);
+  await page.locator('.tw-status .tw-state.armed').waitFor({ timeout: 20000 });
+  check(/0\.25 ETH/.test(await page.locator('.tw-status').innerText()), 'tripwire: ARMED, 0.25 ETH bounty shown', (await page.locator('.tw-stats').innerText()).replace(/\s+/g, ' '));
+  const myBunker = await page.evaluate(() => localStorage.getItem('bunker:last-id'));
+  await page.getByText('Bunker found in the vault.').waitFor({ timeout: 20000 });
+  check(await page.locator('.tw-field input').inputValue() === myBunker, 'tripwire: bunker ID prefilled from the vault page and found on-chain');
+  await page.locator('.tw-tokens .asset-row', { hasText: 'BUNKER' }).waitFor({ timeout: 20000 });
+  const armBtn = page.getByRole('button', { name: /^Arm \d+ tokens?$/ });
+  check(/Arm 2 tokens/.test(await armBtn.innerText()), 'tripwire: tokens the wallet holds (USDC + BUNKER) preselected');
+  await armBtn.click();
+  await page.getByText(/^Armed\. If the canary ever signs/).waitFor({ timeout: 90000 });
+  const armedTokens = (await twRead('tokensOf', [user])).map(a => a.toLowerCase()).sort();
+  check(await twRead('bunkerOf', [user]) === myBunker && armedTokens.join() === [USDC, token].map(a => a.toLowerCase()).sort().join(),
+    'tripwire: registered on-chain (bunker + USDC + BUNKER, approvals given)');
+  await page.locator('.tw-fund input').fill('0.05');
+  await page.getByRole('button', { name: 'Add to bounty' }).click();
+  await page.getByText(/Added 0\.05 ETH to the bounty/).waitFor({ timeout: 60000 });
+  check(await bal(tw) === parseEther('0.3'), 'tripwire: bounty topped up from the page to 0.3 ETH');
+  check(await reverts(() => pub.simulateContract({ address: tw, abi: TWA.abi, functionName: 'escape', account: deployer, args: [user] })), 'tripwire: escape impossible while armed');
+  // the canary signs (simulated: a 7702 delegation designator appears at its address)
+  await rpc('anvil_setCode', [await twRead('canary'), '0xef0100' + vault.slice(2).toLowerCase()]);
+  await page.reload();
+  await page.locator('.tw-alarm').waitFor({ timeout: 30000 });
+  check(true, 'tripwire: page shows TRIPPED alarm');
+  await page.getByRole('button', { name: 'Escape everyone', exact: true }).click();
+  await page.getByText(/^Done: 1 armed wallets swept/).waitFor({ timeout: 90000 }).catch(async e => {
+    console.log('ALARM TEXT:', await page.locator('.tw-alarm').innerText());
+    throw e;
+  });
+  check(await bal(user, USDC) === 0n && await bal(user, token) === 0n
+    && await pub.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [myBunker, USDC] }) === 400_000_000n
+    && await pub.readContract({ address: vault, abi: vaultAbi, functionName: 'balanceOf', args: [myBunker, token] }) === parseEther('777'),
+    'tripwire: "Escape everyone" moved 400 USDC + 777 BUNKER into the bunker');
+
   // ---------------------------------------------------------------- phones
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const h of ['#scan', '#board', '#move', '#vault', '#coin']) {
-    await page.goto(`${WEB}/${q}${h}`);
+  for (const h of ['#scan', '#board', '#move', '#vault', '#tripwire', '#coin']) {
+    await page.goto(`${WEB}/${h === '#tripwire' ? tq : q}${h}`);
     await page.waitForTimeout(1500);
     const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check(over <= 0, `phone 390px ${h}: no sideways scroll`);

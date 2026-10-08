@@ -3,19 +3,21 @@ import { Docs } from './components/Docs';
 import { Home } from './components/Home';
 import { Move } from './components/Move';
 import { Ticker } from './components/Ticker';
+import { Tripwire } from './components/Tripwire';
 import { VaultPanel } from './vault/VaultPanel';
 import { CHAIN_BY_ID } from './chains';
 import { DRAKE_TWEET, GITHUB_URL, X_HANDLE, X_URL } from './config';
 import { short } from './lib/format';
 import { useWallet } from './wallet';
 
-type Page = 'home' | 'move' | 'vault' | 'docs';
+type Page = 'home' | 'move' | 'vault' | 'tripwire' | 'docs';
 type Section = 'scan' | 'board' | 'coin' | null;
 const NAV: { href: string; label: string; page: Page; section?: Section }[] = [
   { href: '#scan', label: 'Scan', page: 'home', section: 'scan' },
   { href: '#board', label: 'Board', page: 'home', section: 'board' },
   { href: '#move', label: 'Move', page: 'move' },
   { href: '#vault', label: 'Vault', page: 'vault' },
+  { href: '#tripwire', label: 'Tripwire', page: 'tripwire' },
   { href: '#coin', label: '$BUNKER', page: 'home', section: 'coin' },
   { href: '#docs', label: 'Docs', page: 'docs' },
 ];
@@ -29,7 +31,7 @@ function readHash(): Route {
   const [path, query = ''] = location.hash.replace(/^#/, '').split('?');
   const a = new URLSearchParams(query).get('a');
   const addrs = a ? a.split(',').map(s => s.trim()).filter(Boolean) : [];
-  if (path === 'move' || path === 'vault' || path === 'docs') return { page: path, section: null, addrs: [] };
+  if (path === 'move' || path === 'vault' || path === 'tripwire' || path === 'docs') return { page: path, section: null, addrs: [] };
   const section = path === 'board' || path === 'coin' || path === 'scan' ? path : null;
   return { page: 'home', section, addrs };
 }
@@ -66,6 +68,7 @@ export default function App() {
         {route.page === 'home' && <Home list={route.addrs} onScan={scan} />}
         {route.page === 'move' && <Move />}
         {route.page === 'docs' && <Docs />}
+        {route.page === 'tripwire' && <Tripwire />}
         {route.page === 'vault' && (
           <section className="sec" id="vault">
             <div className="sec-head">

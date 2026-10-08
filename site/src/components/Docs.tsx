@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
+import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, TRIPWIRE_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
 
 const SECTIONS: [string, string][] = [
   ['overview', 'Overview'],
@@ -8,6 +8,7 @@ const SECTIONS: [string, string][] = [
   ['move', 'Move'],
   ['vault', 'Vault: using it'],
   ['vault-spec', 'Vault: specification'],
+  ['tripwire', 'Tripwire'],
   ['token', '$BUNKER token'],
   ['contracts', 'Contracts'],
   ['risks', 'Risks'],
@@ -164,6 +165,25 @@ export function Docs() {
           </p>
         </section>
 
+        <section id="d-tripwire">
+          <h2>Tripwire</h2>
+          <p>
+            An add-on to the vault: no token, no fee. <code>BunkerTripwire</code> is a public bounty for breaking ECDSA and an
+            escape hatch that fires the moment anyone does.
+          </p>
+          <table className="tbl docs-tbl">
+            <tbody>
+              <tr><td>Canary</td><td>an Ethereum address whose secp256k1 public key is derived from a hash: x = keccak256("BUNKER/TRIPWIRE/CANARY/v1" ‖ uint256 counter) for the first counter on the curve, with the even y. The constructor computes it on-chain, so anyone can check that nobody chose it. Nobody holds its private key</td></tr>
+              <tr><td>Bounty</td><td>ETH sent to the contract with <code>fund()</code>. <code>claim(to, v, r, s)</code> pays all of it to <code>to</code> against a canary signature of <code>keccak256(abi.encode(tag, chainid, contract, to))</code>. The contract hashes that message itself: with a freely chosen hash, a valid-looking signature for any public key can be built without its key, so a raw hash is never accepted. The signature names <code>to</code>, so copying it from the mempool pays nobody else</td></tr>
+              <tr><td>Trip</td><td>once and forever, the first time the canary signs: a valid claim, or code at the canary address (an EIP-7702 delegation, which also needs its signature; <code>trip()</code> records it)</td></tr>
+              <tr><td>Arming</td><td><code>register(bunker, tokens)</code> names a bunker that already exists in the vault and up to 32 tokens; you approve each token to the tripwire. <code>leave()</code> opts out</td></tr>
+              <tr><td>Escape</td><td>after the trip, anyone may call <code>escape(owner)</code> or <code>escapeMany(owners)</code>. Each approved balance (the lower of balance and allowance) moves into the owner's bunker through <code>vault.deposit</code>. A token that fails is skipped and reported, never blocks the others. Before the trip nothing can move, and tokens can only ever go to the owner's registered bunker</td></tr>
+              <tr><td>Keeper</td><td>our bot watches the canary every few seconds, trips the wire and sweeps every armed wallet in batches. Anyone can do the same from the Tripwire page</td></tr>
+              <tr><td>Limits</td><td>ETH itself can not be pulled with an approval (wrap it to WETH). A serious attacker may skip the canary and go after big wallets first: this is an alarm and a bounty, not a guarantee. No owner, no admin, no upgrade, no fee. Not externally audited</td></tr>
+            </tbody>
+          </table>
+        </section>
+
         <section id="d-token">
           <h2>$BUNKER token</h2>
           <table className="tbl docs-tbl">
@@ -186,6 +206,7 @@ export function Docs() {
             <tbody>
               <tr><td>$BUNKER</td><td>{TOKEN_ADDRESS && <a href={es(TOKEN_ADDRESS)} target="_blank" rel="noreferrer">{TOKEN_ADDRESS}</a>}</td></tr>
               <tr><td>BunkerVault</td><td>{VAULT_ADDRESS && <a href={es(VAULT_ADDRESS)} target="_blank" rel="noreferrer">{VAULT_ADDRESS}</a>}</td></tr>
+              {TRIPWIRE_ADDRESS && <tr><td>BunkerTripwire</td><td><a href={es(TRIPWIRE_ADDRESS)} target="_blank" rel="noreferrer">{TRIPWIRE_ADDRESS}</a></td></tr>}
               <tr><td>Pool ID (v4)</td><td><span className="break">{POOL_ID}</span></td></tr>
               <tr><td>LP position</td><td><a href="https://etherscan.io/nft/0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e/444506" target="_blank" rel="noreferrer">#444506</a>, owned by the token contract</td></tr>
               <tr><td>Unused copy</td><td><span className="break">0x25B79CFdEF953D0a9Ee746b79B9f2A2F0bf18382</span>: an identical vault deployed by accident during launch. It is not used by the site</td></tr>

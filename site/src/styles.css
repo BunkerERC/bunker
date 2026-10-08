@@ -536,7 +536,7 @@ main.home { display: block; }
 .state.ok i { background: var(--green); box-shadow: 0 0 10px rgba(46,207,110,.6); }
 
 /* three ways in */
-.tl { display: grid; grid-template-columns: minmax(180px, 300px) 1fr 44px; gap: 24px; align-items: center; padding: 30px 0; border-top: 1px solid var(--line); color: var(--text); }
+.tl { display: grid; grid-template-columns: minmax(200px, 420px) 1fr 44px; gap: 24px; align-items: center; padding: 30px 0; border-top: 1px solid var(--line); color: var(--text); }
 .tl:hover { text-decoration: none; }
 .tl-w { font-family: var(--sans); font-weight: 900; font-stretch: 108%; font-variation-settings: 'wdth' 108; text-transform: uppercase; font-size: clamp(40px, 5vw, 70px); line-height: 0.9; transition: color 160ms var(--ease); }
 .tl-d { color: var(--dim2); font-size: 16px; line-height: 1.55; max-width: 56ch; }
@@ -596,3 +596,45 @@ main.home { display: block; }
 @media (max-width: 520px) { .top .x-link { display: none; } }
 .foot-in .dim { flex: 1 1 420px; }
 .foot-links { display: flex; gap: 18px; flex-wrap: wrap; }
+
+/* ---------- tripwire ---------- */
+.tw .sec-head .hx-kicker { margin-bottom: 14px; }
+.tw-h { font-size: clamp(54px, 8vw, 104px); }
+.tw-grid { display: grid; gap: 12px; }
+.tw-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tw-stats .stat { padding: 4px 18px 8px 0; }
+.tw-stats .stat + .stat { padding-left: 18px; }
+.tw-stats .stat-n { font-size: clamp(24px, 2.6vw, 34px); }
+.tw-canary a { font: 600 15px var(--mono); color: var(--text); }
+.tw-state { display: inline-flex; align-items: center; gap: 9px; font: 800 clamp(24px, 2.6vw, 34px) var(--sans); font-stretch: 108%; font-variation-settings: 'wdth' 108; letter-spacing: 0.01em; line-height: 1; }
+.tw-state i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.tw-state.armed { color: var(--green); }
+.tw-state.armed i { background: var(--green); box-shadow: 0 0 12px rgba(46, 207, 110, 0.7); animation: tw-pulse 2.2s ease-in-out infinite; }
+.tw-state.tripped { color: var(--red); }
+.tw-state.tripped i { background: var(--red); box-shadow: 0 0 14px rgba(255, 82, 87, 0.9); animation: tw-pulse 0.7s ease-in-out infinite; }
+@keyframes tw-pulse { 50% { opacity: 0.35; } }
+.tw-armed .tw-state { font-size: 15px; }
+.tw-armed { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 9px 12px; border: 1px solid rgba(46, 207, 110, 0.3); border-radius: 4px; }
+.tw-key { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.tw-key-v { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--dim2); font-size: 12.5px; overflow-wrap: anywhere; }
+.tw-fund { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); max-width: 460px; }
+.tw-alarm { border-color: rgba(255, 82, 87, 0.55); background: rgba(255, 82, 87, 0.06); }
+.tw-alarm-h { font: 900 clamp(22px, 3vw, 32px) var(--sans); font-stretch: 108%; font-variation-settings: 'wdth' 108; text-transform: uppercase; color: var(--red); line-height: 1; }
+.tw-warn { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid rgba(240, 166, 58, 0.4); border-radius: 4px; color: var(--amber); font-size: 13px; }
+.tw-warn b { color: var(--text); }
+.tw-field { display: grid; gap: 6px; }
+.tw-field .field { font-size: 12.5px; }
+.tw-tokens { border: 1px solid var(--line); border-radius: 4px; }
+.tw-tok { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+.tw-how { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 32px; margin-top: 56px; }
+.tw-step { padding-top: 18px; border-top: 1px solid var(--line); }
+.tw-n { font: 600 12px var(--mono); color: var(--accent); letter-spacing: 0.12em; }
+.tw-step h3 { margin: 10px 0 0; font: 900 26px var(--sans); font-stretch: 108%; font-variation-settings: 'wdth' 108; text-transform: uppercase; }
+.tw-step p { margin: 10px 0 0; color: var(--dim2); font-size: 14.5px; line-height: 1.6; }
+.tw-fine { grid-column: 1 / -1; margin: 28px 0 0; max-width: 90ch; line-height: 1.6; }
+@media (max-width: 760px) {
+  .tw-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tw-stats .stat:nth-child(3) { border-left: 0; padding-left: 0; }
+  .tw-stats .stat:nth-child(n+3) { border-top: 1px solid var(--line); padding-top: 12px; }
+  .tw-how { grid-template-columns: 1fr; gap: 24px; }
+}

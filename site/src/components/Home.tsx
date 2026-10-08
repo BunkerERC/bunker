@@ -245,7 +245,7 @@ function Tools() {
   return (
     <section className="wrap blk tools2">
       <div className="blk-head">
-        <h2 className="h2">Three ways in.</h2>
+        <h2 className="h2">Four ways in.</h2>
       </div>
       <a className="tl" href="#scan" onClick={e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
         <span className="tl-w">Scan</span>
@@ -260,6 +260,11 @@ function Tools() {
       <a className="tl" href="#vault">
         <span className="tl-w">Vault</span>
         <span className="tl-d">Park ETH and tokens behind hash-based one-time signatures. No ECDSA key can move them. Every key burns after one use.</span>
+        <span className="tl-a" aria-hidden="true">↗</span>
+      </a>
+      <a className="tl" href="#tripwire">
+        <span className="tl-w">Tripwire</span>
+        <span className="tl-d">A bounty on ECDSA wired to an escape hatch. The moment the canary key signs, every armed wallet evacuates into its bunker.</span>
         <span className="tl-a" aria-hidden="true">↗</span>
       </a>
       <div className="vx">
