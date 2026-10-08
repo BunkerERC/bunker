@@ -3,7 +3,7 @@
 //   node launch/tripwire.mjs deploy  --rpc URL --keys DIR [--vault 0x..] [--seed 0] [--mainnet]
 //   node launch/tripwire.mjs fund    --rpc URL --keys DIR --amount 0.5 [--tripwire 0x..] [--mainnet]
 //   node launch/tripwire.mjs status  --rpc URL [--keys DIR | --tripwire 0x..]
-//   node launch/tripwire.mjs keeper  --rpc URL --key FILE [--keys DIR | --tripwire 0x..] [--once] [--interval 6]
+//   node launch/tripwire.mjs keeper  --rpc URL[,URL2] --key FILE [--keys DIR | --tripwire 0x..] [--once] [--interval 6]
 //                                    [--tip-gwei 3] [--batch-moves 24] [--mainnet]
 //
 // deploy: BunkerTripwire(vault) from DIR/owner.txt; --seed sends that much ETH into the bounty with the deploy
@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createPublicClient, createWalletClient, http, getAddress, formatEther, parseEther, parseGwei, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, http, fallback, getAddress, formatEther, parseEther, parseGwei, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { mainnet } from 'viem/chains';
 
@@ -44,14 +44,16 @@ const readJson = (file, fallback) => { try { return JSON.parse(fs.readFileSync(f
 function setup() {
   const rpc = opt('rpc');
   if (!rpc) throw new Error('--rpc is required');
-  const local = isLocal(rpc);
+  const urls = rpc.split(',').map(u => u.trim()).filter(Boolean); // several = fallback in order
+  const transport = urls.length > 1 ? fallback(urls.map(u => http(u))) : http(urls[0]);
+  const local = isLocal(urls[0]);
   if (!local && !flag('mainnet') && cmd !== 'status') throw new Error('This is real Ethereum mainnet. Add --mainnet to send real transactions.');
-  const pub = createPublicClient({ chain: mainnet, transport: http(rpc), pollingInterval: local ? 100 : 2000 });
+  const pub = createPublicClient({ chain: mainnet, transport, pollingInterval: local ? 100 : 2000 });
   const keys = opt('keys');
   const recFile = keys && path.join(keys, local ? 'tripwire-fork.json' : 'tripwire.json');
   const rec = recFile ? readJson(recFile, {}) : {};
   const tripwire = opt('tripwire') ?? rec.tripwire;
-  const wallet = file => createWalletClient({ account: privateKeyToAccount(loadKey(file)), chain: mainnet, transport: http(rpc) });
+  const wallet = file => createWalletClient({ account: privateKeyToAccount(loadKey(file)), chain: mainnet, transport });
   return { rpc, local, pub, keys, recFile, tripwire: tripwire && getAddress(tripwire), wallet };
 }
 
