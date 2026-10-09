@@ -38,7 +38,12 @@ function normalize(phrase) {
 export function masterOf(phrase) {
   const p = normalize(phrase);
   if (!isPhrase(p)) throw new Error('not a valid 24-word bunker phrase');
-  const entropy = mnemonicToEntropy(p, wordlist);
+  return masterFromEntropy(mnemonicToEntropy(p, wordlist));
+}
+
+/** Same master from the phrase's 32 bytes of entropy (the launchpad keys unlock from entropy). */
+export function masterFromEntropy(entropy) {
+  if (entropy.length !== 32) throw new Error('entropy must be 32 bytes');
   return keccak256(concat([toBytes('BUNKER/WOTS/v1'), entropy]), 'bytes');
 }
 

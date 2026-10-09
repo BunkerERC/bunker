@@ -18,3 +18,8 @@ export const GITHUB_URL: string | null = "https://github.com/BunkerERC/bunker";
 
 /** BunkerTripwire (ECDSA canary + escape hatch into the vault) on Ethereum mainnet. null until deploy. */
 export const TRIPWIRE_ADDRESS: `0x${string}` | null = "0x20085f519465288A5f4ed8917EB6e73429B2EE39";
+
+/** BunkerLaunchpad (post-quantum signed coin launches, 50/50 fees) on Ethereum mainnet. null until deploy. */
+export const LAUNCHPAD_ADDRESS: `0x${string}` | null = "0xe5871db88A72e4B18Fe37175C4774718aB356000";
+/** block the launchpad was deployed in (log scans start here). */
+export const LAUNCHPAD_BLOCK = 26154517n;

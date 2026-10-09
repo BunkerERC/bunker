@@ -7,6 +7,7 @@ import { CHAINS, client } from '../chains';
 import { useWallet } from '../wallet';
 import { TOKEN_ADDRESS, VAULT_ADDRESS, VAULT_BLOCK } from '../config';
 import { WotsBars } from '../components/Home';
+import { useKeys } from '../launch/keys';
 
 // ------------------------------------------------------------------ config (dev overrides for fork tests)
 const devParam = (name: string): Hex | null => {
@@ -83,6 +84,7 @@ function clearPending(id: Hex, nonce: number) {
 
 // ------------------------------------------------------------------ panel
 export default function Vault() {
+  const keys = useKeys();
   const [master, setMaster] = useState<Uint8Array | null>(null);
   return (
     <div className="vault">
@@ -122,6 +124,12 @@ export default function Vault() {
           ) : (
             <>
               <LastBunker vault={VAULT} />
+              {keys.vaultMaster && (
+                <div className="vault-card vault-gate">
+                  <button className="btn primary" onClick={() => setMaster(keys.vaultMaster)}>Open with the unlocked phrase</button>
+                  <p className="dim">Your bunker phrase is unlocked in Launch. Same 24 words, same bunker.</p>
+                </div>
+              )}
               <PhraseGate onOpen={setMaster} />
             </>
           )}

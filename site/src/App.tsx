@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Docs } from './components/Docs';
 import { Home } from './components/Home';
 import { Move } from './components/Move';
@@ -10,10 +10,13 @@ import { DRAKE_TWEET, GITHUB_URL, X_HANDLE, X_URL } from './config';
 import { short } from './lib/format';
 import { useWallet } from './wallet';
 
-type Page = 'home' | 'move' | 'vault' | 'tripwire' | 'docs';
+const LaunchPages = lazy(() => import('./launch/Pages'));
+
+type Page = 'home' | 'move' | 'vault' | 'tripwire' | 'launch' | 'coin' | 'docs';
 type Section = 'scan' | 'board' | 'coin' | null;
 const NAV: { href: string; label: string; page: Page; section?: Section }[] = [
   { href: '#scan', label: 'Scan', page: 'home', section: 'scan' },
+  { href: '#launch', label: 'Launch', page: 'launch' },
   { href: '#board', label: 'Board', page: 'home', section: 'board' },
   { href: '#move', label: 'Move', page: 'move' },
   { href: '#vault', label: 'Vault', page: 'vault' },
@@ -26,12 +29,16 @@ interface Route {
   page: Page;
   section: Section;
   addrs: string[];
+  sub?: string; // launch: '' | 'new' | 'keys'; coin: the token address
+  query?: URLSearchParams;
 }
 function readHash(): Route {
   const [path, query = ''] = location.hash.replace(/^#/, '').split('?');
   const a = new URLSearchParams(query).get('a');
   const addrs = a ? a.split(',').map(s => s.trim()).filter(Boolean) : [];
   if (path === 'move' || path === 'vault' || path === 'tripwire' || path === 'docs') return { page: path, section: null, addrs: [] };
+  if (path === 'launch' || path.startsWith('launch/')) return { page: 'launch', section: null, addrs: [], sub: path.slice(7), query: new URLSearchParams(query) };
+  if (/^coin\/0x[0-9a-fA-F]{40}$/.test(path)) return { page: 'coin', section: null, addrs: [], sub: path.slice(5) };
   const section = path === 'board' || path === 'coin' || path === 'scan' ? path : null;
   return { page: 'home', section, addrs };
 }
@@ -51,7 +58,7 @@ export default function App() {
       return;
     }
     requestAnimationFrame(() => document.getElementById(route.section!)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  }, [route.page, route.section]);
+  }, [route.page, route.section, route.sub]);
 
   const scan = useCallback((l: string[]) => {
     const h = `#scan?a=${l.join(',')}`;
@@ -69,6 +76,11 @@ export default function App() {
         {route.page === 'move' && <Move />}
         {route.page === 'docs' && <Docs />}
         {route.page === 'tripwire' && <Tripwire />}
+        {(route.page === 'launch' || route.page === 'coin') && (
+          <Suspense fallback={<section className="sec"><i className="spin" aria-label="loading" /></section>}>
+            <LaunchPages page={route.page} sub={route.sub} ticker={route.query?.get('ticker') ?? undefined} />
+          </Suspense>
+        )}
         {route.page === 'vault' && (
           <section className="sec" id="vault">
             <div className="sec-head">
@@ -88,7 +100,8 @@ function Header({ route }: { route: Route }) {
   const w = useWallet();
   const chain = w.chainId ? CHAIN_BY_ID.get(w.chainId) : undefined;
   const active = (n: (typeof NAV)[number]) =>
-    n.page === route.page && (n.page !== 'home' || n.section === (route.section ?? 'scan'));
+    (n.page === route.page || (n.page === 'launch' && route.page === 'coin')) &&
+    (n.page !== 'home' || n.section === (route.section ?? 'scan'));
   return (
     <header className="top">
       <div className="top-in">

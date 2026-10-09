@@ -21,6 +21,7 @@
   <a href="https://bunkereth.xyz/#docs"><b>Docs</b></a> ·
   <a href="https://bunkereth.xyz/#vault"><b>Vault</b></a> ·
   <a href="https://bunkereth.xyz/#tripwire"><b>Tripwire</b></a> ·
+  <a href="https://bunkereth.xyz/#launch"><b>Launch</b></a> ·
   <a href="https://x.com/BunkerCoinEth"><b>X</b></a> ·
   <a href="https://etherscan.io/token/0xBDC4cE7c4718d20498e7D549751FF336690eb6D7"><b>$BUNKER</b></a>
 </p>
@@ -42,6 +43,7 @@ BUNKER is the toolkit for bunker mode:
 | **Move** | sweep a wallet into a fresh address that has never signed, chain by chain, in one confirmation where the wallet supports batching |
 | **Vault** | hold ETH and tokens behind Winternitz one-time signatures over keccak256. No ECDSA key can move them, and every key is burned after one use |
 | **Tripwire** | a public bounty for breaking ECDSA, wired to an escape hatch: the moment the canary key signs, every armed wallet's tokens move into its bunker |
+| **Launch** | a launchpad for coins signed with a post-quantum key: the launch transaction checks a hash-based (XMSS) signature over every field before the coin exists. Liquidity locked forever, dev bag straight into your bunker, fees 50/50 creator / BUNKER |
 
 ## How a key gets exposed
 
@@ -95,6 +97,29 @@ flowchart LR
 - **Limits.** ETH itself can not be pulled by approval (wrap to WETH). An attacker can skip the canary and go for big wallets first: this
   is an alarm and a bounty, not a guarantee. No owner, no admin, no upgrade, no fee.
 
+## Launchpad
+
+```mermaid
+flowchart LR
+    P["24-word bunker phrase"] -->|"BUNKER/XMSS/v1"| X["1,024 one-time keys<br/>(XMSS, Merkle root = creator id)"]
+    P -->|"BUNKER/WOTS/v1"| V["Bunker (BunkerVault account)"]
+    X -->|"one key signs every field<br/>of the coin"| L["launch(params, sig)"]
+    L -->|"verify + burn the key,<br/>CREATE2 token, v4 pool,<br/>whole supply locked, dev buy"| C["Coin"]
+    C -->|"dev bag / creator fees"| V
+```
+
+- **Creator key.** An XMSS tree of 1,024 Winternitz one-time keys (w = 16, 67 keccak256 chains, tweaked with a public seed and the
+  exact position) under one Merkle root, grown in the browser from the bunker phrase. Domain-separated from the vault keys.
+- **Launch.** `launch(params, sig)` rebuilds the message from every field (name, ticker, metadata, image, dev buy, where the dev bag
+  and the creator fees go, the sending wallet, this contract, the chain), checks the signature, burns the one-time key in an on-chain
+  bitmap and only then creates the token. A copied transaction from another wallet, or any changed field, fails.
+- **Pool.** Uniswap v4, native ETH, 1% fee, start market cap about 2 ETH. The launchpad is the pool's hook (`beforeInitialize` only), so
+  nobody can create or price a coin's pool first. The whole supply is one single-sided position the launchpad owns, with no function that
+  removes it. The dev buy lands in the same transaction, into a wallet or straight into a bunker.
+- **Fees.** Anyone may `collect(token)`: 50% to the creator (wallet or bunker), 50% to BUNKER. Only the creator's post-quantum key can
+  move the creator half (`setFeeTo`). No owner, no admin, no upgrade, no launch fee.
+- **Token.** 1B fixed supply, no owner, mint, tax, blacklist, pause, max wallet or `permit()`.
+
 ## Contracts
 
 Ethereum mainnet, verified on Etherscan and Sourcify.
@@ -104,6 +129,7 @@ Ethereum mainnet, verified on Etherscan and Sourcify.
 | $BUNKER | [`0xBDC4cE7c4718d20498e7D549751FF336690eb6D7`](https://etherscan.io/address/0xBDC4cE7c4718d20498e7D549751FF336690eb6D7#code) |
 | BunkerVault | [`0x39C71b635409b1f98dc632e08d3B29515ddb2727`](https://etherscan.io/address/0x39C71b635409b1f98dc632e08d3B29515ddb2727#code) |
 | BunkerTripwire | [`0x20085f519465288A5f4ed8917EB6e73429B2EE39`](https://etherscan.io/address/0x20085f519465288A5f4ed8917EB6e73429B2EE39#code) |
+| BunkerLaunchpad | [`0xe5871db88A72e4B18Fe37175C4774718aB356000`](https://etherscan.io/address/0xe5871db88A72e4B18Fe37175C4774718aB356000#code) |
 | Uniswap v4 pool id | `0x04d2cd739c30250554ceb5dad968b34e98e5932d3463e87f934c4d3a9484312b` |
 | LP position | [#444506](https://etherscan.io/nft/0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e/444506), owned by the token contract |
 
@@ -136,8 +162,11 @@ Full specification and usage: [bunkereth.xyz/#docs](https://bunkereth.xyz/#docs)
 
 ```
 contracts/   Foundry: BunkerToken.sol, BunkerVault.sol, BunkerTripwire.sol and their tests
-site/        Vite + React + viem front end (scan, move, vault, docs)
-             site/src/lib/wots.js is the browser signer used by the vault page
+launchpad/   Foundry (via-IR): BunkerLaunchpad.sol, BunkerLaunchToken.sol, XMSS.sol + tests;
+             scripts/launchpad.mjs (deploy / status / collect), pq-cli.mjs (XMSS signer for forge ffi)
+site/        Vite + React + viem front end (scan, move, vault, tripwire, launch, docs)
+             site/src/lib/wots.js is the browser signer used by the vault page,
+             site/src/launch/pq/xmss.js the XMSS signer used by the launchpad
 launch/      bunker-launch.mjs (deploy / launch / collect / status), tripwire.mjs (deploy / fund / status / keeper)
              and end-to-end tests
 ```
@@ -151,6 +180,8 @@ forge test --match-contract BunkerTokenFork --fork-url <mainnet rpc>         # l
 cd .. && node launch/test/wots-e2e.mjs                                       # browser signer vs the contract
 node launch/test/tripwire-e2e.mjs                                            # tripwire on a mainnet fork: real vault, real tokens, 7702, keeper
 node launch/test/site-e2e.mjs                                                # whole site in headless Chromium on a mainnet fork
+cd launchpad/contracts && forge install foundry-rs/forge-std --no-git && forge test   # XMSS vectors + launchpad on a mainnet fork (live vault)
+cd ../.. && node launch/test/launchpad-e2e.mjs                               # launch, verify, trade, collect, setFeeTo, vault withdrawal in Chromium
 ```
 
 Needs [Foundry](https://getfoundry.sh) and, for the browser test, `npx playwright install chromium`.

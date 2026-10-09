@@ -4,6 +4,7 @@ export const CHAINS: 67;
 export function newPhrase(): string;
 export function isPhrase(phrase: string): boolean;
 export function masterOf(phrase: string): Uint8Array;
+export function masterFromEntropy(entropy: Uint8Array): Uint8Array;
 export function digitsOf(digest: Hex): number[];
 export function keyHash(master: Uint8Array, k: number): Hex;
 export function accountId(master: Uint8Array): Hex;

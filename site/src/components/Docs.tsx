@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DRAKE_TWEET, GITHUB_URL, TOKEN_ADDRESS, TRIPWIRE_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
+import { DRAKE_TWEET, GITHUB_URL, LAUNCHPAD_ADDRESS, TOKEN_ADDRESS, TRIPWIRE_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
 
 const SECTIONS: [string, string][] = [
   ['overview', 'Overview'],
@@ -9,6 +9,7 @@ const SECTIONS: [string, string][] = [
   ['vault', 'Vault: using it'],
   ['vault-spec', 'Vault: specification'],
   ['tripwire', 'Tripwire'],
+  ['launchpad', 'Launchpad'],
   ['token', '$BUNKER token'],
   ['contracts', 'Contracts'],
   ['risks', 'Risks'],
@@ -184,6 +185,27 @@ export function Docs() {
           </table>
         </section>
 
+        <section id="d-launchpad">
+          <h2>Launchpad</h2>
+          <p>
+            <code>BunkerLaunchpad</code> launches ERC-20s whose provenance is a hash-based signature checked on-chain. No
+            new token of ours: BUNKER earns half of the trading fees of every coin launched here.
+          </p>
+          <table className="tbl docs-tbl">
+            <tbody>
+              <tr><td>Creator key</td><td>an XMSS tree: 1,024 Winternitz one-time keys (w=16, 67 keccak256 chains, tweaked with a public seed and the exact position) under one Merkle root. It grows in the browser from your 24-word bunker phrase, domain-separated from the vault keys (<code>BUNKER/XMSS/v1</code> vs <code>BUNKER/WOTS/v1</code>). Identity = keccak256(seed, root)</td></tr>
+              <tr><td>Launch</td><td><code>launch(params, sig)</code> rebuilds the message from every field (name, ticker, description and links, image, dev buy amount, where the dev bag and the creator fees go, the sending wallet, this contract, the chain), checks the XMSS signature, burns that one-time key in an on-chain bitmap, then creates the token with CREATE2. A copied transaction from another wallet, or any changed field, fails the check</td></tr>
+              <tr><td>Token</td><td>1,000,000,000 fixed supply, 18 decimals. No owner, mint, tax, blacklist, pause, max wallet or permit()</td></tr>
+              <tr><td>Pool</td><td>Uniswap v4, native ETH, 1% fee, tick spacing 200, start market cap about 2 ETH. The launchpad is the pool's hook (beforeInitialize only), so nobody can create or price a coin's pool before its launch transaction. The whole supply goes in as one single-sided position the launchpad owns, with no function that removes it: locked forever</td></tr>
+              <tr><td>Dev buy</td><td>in the same transaction, before anyone else can trade. Tokens go to a wallet or straight into a BunkerVault account (your bunker), where only your phrase can move them</td></tr>
+              <tr><td>Fees</td><td>anyone may call <code>collect(token)</code>: 50% of the pool fees to the creator (wallet or bunker), 50% to BUNKER. Only the creator's post-quantum key can redirect the creator half (<code>setFeeTo</code>, one more one-time key). A fee wallet that refuses ETH is credited, never blocks the others</td></tr>
+              <tr><td>Trading</td><td>plain v4 pool: any router, aggregator or bot can trade it; the site uses the launchpad's own <code>buy</code>/<code>sell</code> with slippage limits and deadlines</td></tr>
+              <tr><td>Images</td><td>stored on-chain in the launch log (at most 24 KB). The site shows only PNG, JPEG, WEBP and GIF, and only links https URLs from the metadata</td></tr>
+              <tr><td>Admin</td><td>none. No owner, no upgrade, no pause. The platform address can only change where the platform half goes. Not externally audited</td></tr>
+            </tbody>
+          </table>
+        </section>
+
         <section id="d-token">
           <h2>$BUNKER token</h2>
           <table className="tbl docs-tbl">
@@ -207,6 +229,7 @@ export function Docs() {
               <tr><td>$BUNKER</td><td>{TOKEN_ADDRESS && <a href={es(TOKEN_ADDRESS)} target="_blank" rel="noreferrer">{TOKEN_ADDRESS}</a>}</td></tr>
               <tr><td>BunkerVault</td><td>{VAULT_ADDRESS && <a href={es(VAULT_ADDRESS)} target="_blank" rel="noreferrer">{VAULT_ADDRESS}</a>}</td></tr>
               {TRIPWIRE_ADDRESS && <tr><td>BunkerTripwire</td><td><a href={es(TRIPWIRE_ADDRESS)} target="_blank" rel="noreferrer">{TRIPWIRE_ADDRESS}</a></td></tr>}
+              {LAUNCHPAD_ADDRESS && <tr><td>BunkerLaunchpad</td><td><a href={es(LAUNCHPAD_ADDRESS)} target="_blank" rel="noreferrer">{LAUNCHPAD_ADDRESS}</a></td></tr>}
               <tr><td>Pool ID (v4)</td><td><span className="break">{POOL_ID}</span></td></tr>
               <tr><td>LP position</td><td><a href="https://etherscan.io/nft/0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e/444506" target="_blank" rel="noreferrer">#444506</a>, owned by the token contract</td></tr>
               <tr><td>Unused copy</td><td><span className="break">0x25B79CFdEF953D0a9Ee746b79B9f2A2F0bf18382</span>: an identical vault deployed by accident during launch. It is not used by the site</td></tr>

@@ -6,3 +6,7 @@ contracts/cache/
 *.local
 .env*
 keys/
+launchpad/contracts/out/
+launchpad/contracts/cache/
+launchpad/contracts/lib/
+.cache/

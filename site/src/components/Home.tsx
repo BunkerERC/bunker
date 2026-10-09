@@ -245,7 +245,7 @@ function Tools() {
   return (
     <section className="wrap blk tools2">
       <div className="blk-head">
-        <h2 className="h2">Four ways in.</h2>
+        <h2 className="h2">Five ways in.</h2>
       </div>
       <a className="tl" href="#scan" onClick={e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
         <span className="tl-w">Scan</span>
@@ -265,6 +265,11 @@ function Tools() {
       <a className="tl" href="#tripwire">
         <span className="tl-w">Tripwire</span>
         <span className="tl-d">A bounty on ECDSA wired to an escape hatch. The moment the canary key signs, every armed wallet evacuates into its bunker.</span>
+        <span className="tl-a" aria-hidden="true">↗</span>
+      </a>
+      <a className="tl" href="#launch">
+        <span className="tl-w">Launch</span>
+        <span className="tl-d">Launch a coin signed with a post-quantum key, checked by the launch transaction itself. Liquidity locked forever, dev bag straight into your bunker, 50% of the fees to you.</span>
         <span className="tl-a" aria-hidden="true">↗</span>
       </a>
       <div className="vx">

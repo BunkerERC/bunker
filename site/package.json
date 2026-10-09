@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "@scure/bip39": "^1.6.0",
+    "lightweight-charts": "^5.0.8",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "viem": "^2.57.3"
