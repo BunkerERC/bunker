@@ -133,6 +133,11 @@ async function main() {
   await page.getByRole('button', { name: 'Create a bunker phrase' }).click();
   const words = (await page.locator('.phrase-grid li').allInnerTexts()).map(t => t.replace(/^\d+\s*/, '').trim());
   check(words.length === 24 && wots.isPhrase(words.join(' ')), 'phrase: 24 valid words made in the browser');
+  const hidden = await page.evaluate(() => [...document.querySelectorAll('.phrase-grid li')].filter(li => {
+    const r = li.getBoundingClientRect(), g = li.closest('.panel').getBoundingClientRect();
+    return li.scrollWidth > li.clientWidth + 1 || r.right > g.right + 0.5 || r.left < g.left - 0.5;
+  }).length);
+  check(hidden === 0, 'phrase: all 24 words fully visible in the launch sidebar (none clipped)');
   const phrase = words.join(' ');
   for (const label of await page.locator('.vault-quiz label').all()) {
     const n = Number((await label.innerText()).match(/#(\d+)/)[1]);
