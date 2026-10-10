@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DRAKE_TWEET, GITHUB_URL, LAUNCHPAD_ADDRESS, TOKEN_ADDRESS, TRIPWIRE_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
+import { DRAKE_TWEET, GITHUB_URL, LAUNCHPAD_ADDRESS, SWAP_ADDRESS, TOKEN_ADDRESS, TRIPWIRE_ADDRESS, VAULT_ADDRESS, X_HANDLE, X_URL } from '../config';
 
 const SECTIONS: [string, string][] = [
   ['overview', 'Overview'],
@@ -8,6 +8,7 @@ const SECTIONS: [string, string][] = [
   ['move', 'Move'],
   ['vault', 'Vault: using it'],
   ['vault-spec', 'Vault: specification'],
+  ['swap', 'Swap and gasless'],
   ['tripwire', 'Tripwire'],
   ['launchpad', 'Launchpad'],
   ['token', '$BUNKER token'],
@@ -126,7 +127,8 @@ export function Docs() {
           <ol>
             <li><b>Create a bunker</b>: the page generates 24 words in your browser. This is not your wallet's seed phrase. Write it on paper; it is the only thing that can withdraw.</li>
             <li><b>Deposit</b> ETH or ERC-20 tokens from any connected wallet. From that point the depositing wallet has no control over the funds.</li>
-            <li><b>Withdraw</b>: open the bunker with the phrase, pick assets, amounts and a destination. Your browser signs with the current one-time key; the connected wallet only submits the transaction and pays gas. The key is burned and the bunker moves to the next key.</li>
+            <li><b>Withdraw</b>: open the bunker with the phrase, pick assets, amounts and a destination. Your browser signs with the current one-time key; a wallet or the relayer only submits the transaction and pays gas. The key is burned and the bunker moves to the next key.</li>
+            <li><b>Swap</b>: buy or sell against ETH without the funds leaving the vault for a wallet. <b>Gasless</b>: no wallet at all, a relayer submits for a small fee taken from the bunker. See <i>Swap and gasless</i> below.</li>
           </ol>
           <ul>
             <li>The phrase is kept in memory only. Reloading the page locks the bunker; its public ID is remembered so its balance still shows.</li>
@@ -148,7 +150,7 @@ export function Docs() {
               <tr><td>Signed message</td><td><code>keccak256(abi.encode(TAG, chainid, vault, id, nonce, relayer, fee, nextKey, keccak256(abi.encode(transfers))))</code>, TAG = <code>keccak256("BunkerVault.execute.v1")</code></td></tr>
               <tr><td>Key derivation (client)</td><td><code>master = keccak256("BUNKER/WOTS/v1" ‖ entropy)</code> of the 24-word phrase; <code>secret(k, i) = keccak256(master ‖ uint32(k) ‖ uint8(i))</code>, k = account nonce</td></tr>
               <tr><td>Rotation</td><td>every <code>execute</code> marks the current key spent forever and switches to the signed <code>nextKey</code>; a spent key can never be used again or opened as an account</td></tr>
-              <tr><td>Submitter</td><td>anyone; <code>relayer</code> (if set) restricts who may submit, <code>fee</code> pays ETH to the submitter. Recipients and amounts are fixed by the signature</td></tr>
+              <tr><td>Submitter</td><td>anyone; <code>relayer</code> (if set) restricts who may submit, <code>fee</code> pays ETH to the submitter (this is what pays the gasless relayer). Recipients and amounts are fixed by the signature</td></tr>
               <tr><td>Sends</td><td>each payout gets a fixed gas budget (ETH 100k, tokens 250k) and the call reverts if the submitter gave less, so a payout can not be starved into <i>claimable</i></td></tr>
               <tr><td>Gas</td><td>about 200k to 280k per withdrawal, signature check included</td></tr>
             </tbody>
@@ -164,6 +166,28 @@ export function Docs() {
             <code>accounts(id)</code>, <code>balanceOf(id, token)</code>, <code>digest(…)</code>,{' '}
             <code>wotsPublicKey(digest, sig)</code>, <code>spentKey(key)</code>, <code>claimable(to, token)</code>.
           </p>
+        </section>
+
+        <section id="d-swap">
+          <h2>Swap and gasless</h2>
+          <p>
+            <code>BunkerSwap</code> lets a bunker trade. The funds go vault → Uniswap → the same bunker in one
+            transaction, so a bought coin never sits in a wallet that an ECDSA key controls. The vault itself is
+            unchanged: it still only does what a hash signature tells it.
+          </p>
+          <table className="tbl docs-tbl">
+            <tbody>
+              <tr><td>How an order is tied to the signature</td><td>the vault can only sign "send this amount to that address". Each order has a <i>box</i>: a tiny proxy at a CREATE2 address whose salt is the hash of the whole order (bunker, tokens, amount, the least you accept, tip, who may submit, deadline, the exact Uniswap route). You sign a send to that address. Change any term and the address is a different one, so the signature no longer matches</td></tr>
+              <tr><td>Swap or nothing</td><td>before the deadline <code>run()</code> either swaps in full, with at least your minimum booked to your bunker, or reverts and changes nothing (the key is not burned)</td></tr>
+              <tr><td>Never stuck</td><td>after the deadline the same signature only hands the funds back to the bunker and rotates the key, and anyone may send it. An order can be live for one hour at most; the site uses 10 minutes. If a token can not be moved at that moment, the funds wait in the box and <code>rescue()</code> returns them later; they can only ever go back to the same bunker</td></tr>
+              <tr><td>Routes</td><td>one side is always ETH. The page asks Uniswap v2, v3 and v4 pools (and the launchpad pool) for a quote and signs the best one. The swap runs through Uniswap's Universal Router</td></tr>
+              <tr><td>Fee</td><td>0.5% of the ETH side, fixed in the contract forever, paid to BUNKER with every swap. Nothing on an order that is handed back</td></tr>
+              <tr><td>Gasless</td><td>a relayer with a small hot wallet submits your signed message, so you need no wallet and no gas. It is paid by the fee inside the message you signed: the vault's own fee slot for a withdrawal, the order's tip for a swap (taken from the ETH side). It can not change a recipient, an amount or a route. A swap names the relayer as its submitter, so a bot that copies the transaction gets nothing</td></tr>
+              <tr><td>If the relayer is down</td><td>nothing depends on it. A withdrawal can be submitted by any wallet. A swap can be handed back by any wallet once its deadline has passed</td></tr>
+              <tr><td>What the relayer takes</td><td>the gas plus a small margin, shown before you sign. It swaps $BUNKER, launchpad coins and the big tokens; any other token goes through your own wallet</td></tr>
+              <tr><td>Limits</td><td>the swap itself is an ordinary Uniswap trade and can be front-run inside your slippage like any other. A box address is a 160-bit hash, the same strength as any Ethereum address. Tokens that charge the sender extra on transfer are not supported. No owner, no upgrade, no pause; the platform address can only change where the fee is paid. Not externally audited</td></tr>
+            </tbody>
+          </table>
         </section>
 
         <section id="d-tripwire">
@@ -223,12 +247,13 @@ export function Docs() {
 
         <section id="d-contracts">
           <h2>Contracts</h2>
-          <p>All verified on Etherscan and Sourcify (exact match). Source and tests are on GitHub{GITHUB_URL ? '' : ' (link coming)'}.</p>
+          <p>All verified on Etherscan. Source and tests are on GitHub{GITHUB_URL ? '' : ' (link coming)'}.</p>
           <table className="tbl docs-tbl mono-cells">
             <tbody>
               <tr><td>$BUNKER</td><td>{TOKEN_ADDRESS && <a href={es(TOKEN_ADDRESS)} target="_blank" rel="noreferrer">{TOKEN_ADDRESS}</a>}</td></tr>
               <tr><td>BunkerVault</td><td>{VAULT_ADDRESS && <a href={es(VAULT_ADDRESS)} target="_blank" rel="noreferrer">{VAULT_ADDRESS}</a>}</td></tr>
               {TRIPWIRE_ADDRESS && <tr><td>BunkerTripwire</td><td><a href={es(TRIPWIRE_ADDRESS)} target="_blank" rel="noreferrer">{TRIPWIRE_ADDRESS}</a></td></tr>}
+              {SWAP_ADDRESS && <tr><td>BunkerSwap</td><td><a href={es(SWAP_ADDRESS)} target="_blank" rel="noreferrer">{SWAP_ADDRESS}</a></td></tr>}
               {LAUNCHPAD_ADDRESS && <tr><td>BunkerLaunchpad</td><td><a href={es(LAUNCHPAD_ADDRESS)} target="_blank" rel="noreferrer">{LAUNCHPAD_ADDRESS}</a></td></tr>}
               <tr><td>Pool ID (v4)</td><td><span className="break">{POOL_ID}</span></td></tr>
               <tr><td>LP position</td><td><a href="https://etherscan.io/nft/0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e/444506" target="_blank" rel="noreferrer">#444506</a>, owned by the token contract</td></tr>

@@ -74,6 +74,29 @@ The submitter only pays gas: it can not change recipients or amounts, and a fron
 message. The signature scheme is the same family the [lean Ethereum roadmap](https://x.com/VitalikButerin/status/2108034068684435804)
 uses for its post-quantum signatures (WOTS).
 
+## Swap and gasless
+
+```mermaid
+flowchart LR
+    B["Bunker (BunkerVault account)"] -->|"hash signature:<br/>send X to the order's box"| X["Box<br/>address = hash of the whole order"]
+    X -->|"BunkerSwap.run()"| U["Uniswap<br/>(v2 / v3 / v4)"]
+    U -->|"at least the signed minimum,<br/>less 0.5% of the ETH side"| B
+    R["Relayer (optional)"] -.->|"submits, pays gas,<br/>gets the signed tip"| X
+```
+
+- **Trade without leaving the vault.** `BunkerSwap` moves funds vault → Uniswap → the same bunker in one transaction. A bought coin
+  never sits in a wallet that an ECDSA key controls. The vault is unchanged and still only obeys hash signatures.
+- **How an order is tied to the signature.** The vault can only sign "send this amount to that address". Each order has a box: a
+  minimal proxy at a CREATE2 address whose salt is the hash of the order (bunker, tokens, amount, minimum out, tip, who may submit,
+  deadline, the exact Universal Router call). Change any term and the address changes, so the signature no longer matches.
+- **Swap or nothing, and never stuck.** Before the deadline `run()` swaps in full or reverts without burning the key. After it, the
+  same signature only hands the funds back and rotates the key, and anyone may send it. An order is live for one hour at most. Funds
+  that can not move at that moment wait in the box; `rescue()` returns them, only ever to the same bunker.
+- **Gasless.** `launch/swap.mjs relayer` is a small service with a hot wallet. It submits signed withdrawals (paid by the vault's own
+  `fee` slot) and swaps (paid by the order's tip) for people with no wallet and no gas. It can not change a recipient, an amount or a
+  route, and nobody depends on it: any wallet can submit a withdrawal or hand back an expired order.
+- **Fee.** 0.5% of the ETH side of every swap, fixed in the contract. No owner, no upgrade, no pause.
+
 ## Tripwire
 
 ```mermaid
@@ -122,13 +145,14 @@ flowchart LR
 
 ## Contracts
 
-Ethereum mainnet, verified on Etherscan and Sourcify.
+Ethereum mainnet, verified on Etherscan.
 
 | | address |
 |---|---|
 | $BUNKER | [`0xBDC4cE7c4718d20498e7D549751FF336690eb6D7`](https://etherscan.io/address/0xBDC4cE7c4718d20498e7D549751FF336690eb6D7#code) |
 | BunkerVault | [`0x39C71b635409b1f98dc632e08d3B29515ddb2727`](https://etherscan.io/address/0x39C71b635409b1f98dc632e08d3B29515ddb2727#code) |
 | BunkerTripwire | [`0x20085f519465288A5f4ed8917EB6e73429B2EE39`](https://etherscan.io/address/0x20085f519465288A5f4ed8917EB6e73429B2EE39#code) |
+| BunkerSwap | [`0x620158a6911A18434148d74B7132ceA71C5F83Ba`](https://etherscan.io/address/0x620158a6911A18434148d74B7132ceA71C5F83Ba#code) |
 | BunkerLaunchpad | [`0xe5871db88A72e4B18Fe37175C4774718aB356000`](https://etherscan.io/address/0xe5871db88A72e4B18Fe37175C4774718aB356000#code) |
 | Uniswap v4 pool id | `0x04d2cd739c30250554ceb5dad968b34e98e5932d3463e87f934c4d3a9484312b` |
 | LP position | [#444506](https://etherscan.io/nft/0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e/444506), owned by the token contract |
@@ -161,14 +185,16 @@ Full specification and usage: [bunkereth.xyz/#docs](https://bunkereth.xyz/#docs)
 ## Repository
 
 ```
-contracts/   Foundry: BunkerToken.sol, BunkerVault.sol, BunkerTripwire.sol and their tests
+contracts/   Foundry: BunkerToken.sol, BunkerVault.sol, BunkerTripwire.sol, BunkerSwap.sol and their tests
 launchpad/   Foundry (via-IR): BunkerLaunchpad.sol, BunkerLaunchToken.sol, XMSS.sol + tests;
              scripts/launchpad.mjs (deploy / status / collect), pq-cli.mjs (XMSS signer for forge ffi)
 site/        Vite + React + viem front end (scan, move, vault, tripwire, launch, docs)
              site/src/lib/wots.js is the browser signer used by the vault page,
+             site/src/lib/bunkerswap.js builds swap orders, routes and quotes,
+             site/api/relay.js is the same-origin door to the relayer,
              site/src/launch/pq/xmss.js the XMSS signer used by the launchpad
-launch/      bunker-launch.mjs (deploy / launch / collect / status), tripwire.mjs (deploy / fund / status / keeper)
-             and end-to-end tests
+launch/      bunker-launch.mjs (deploy / launch / collect / status), tripwire.mjs (deploy / fund / status / keeper),
+             swap.mjs (deploy / status / collect / relayer) and end-to-end tests
 ```
 
 ### Tests
@@ -177,9 +203,12 @@ launch/      bunker-launch.mjs (deploy / launch / collect / status), tripwire.mj
 npm install && (cd site && npm install)
 cd contracts && forge install foundry-rs/forge-std --no-git && forge test     # vault + tripwire unit and fuzz tests
 forge test --match-contract BunkerTokenFork --fork-url <mainnet rpc>         # launch, LP lock, max wallet on real Uniswap v4
+forge test --match-contract BunkerSwapFork --fork-url <mainnet rpc>          # swaps for the live vault on real v2 / v3 / v4 pools
 cd .. && node launch/test/wots-e2e.mjs                                       # browser signer vs the contract
 node launch/test/tripwire-e2e.mjs                                            # tripwire on a mainnet fork: real vault, real tokens, 7702, keeper
 node launch/test/site-e2e.mjs                                                # whole site in headless Chromium on a mainnet fork
+node launch/test/swap-e2e.mjs                                                # BunkerSwap + the relayer on a mainnet fork
+node launch/test/swap-site-e2e.mjs                                           # swap and gasless sends in Chromium, with and without a wallet
 cd launchpad/contracts && forge install foundry-rs/forge-std --no-git && forge test   # XMSS vectors + launchpad on a mainnet fork (live vault)
 cd ../.. && node launch/test/launchpad-e2e.mjs                               # launch, verify, trade, collect, setFeeTo, vault withdrawal in Chromium
 ```

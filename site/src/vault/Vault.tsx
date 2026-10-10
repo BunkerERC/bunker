@@ -5,9 +5,13 @@ import * as wots from '../lib/wots.js';
 import { vaultAbi, erc20Abi } from './abi';
 import { CHAINS, client } from '../chains';
 import { useWallet } from '../wallet';
-import { TOKEN_ADDRESS, VAULT_ADDRESS, VAULT_BLOCK } from '../config';
+import { LAUNCHPAD_ADDRESS, SWAP_ADDRESS, TOKEN_ADDRESS, VAULT_ADDRESS, VAULT_BLOCK } from '../config';
 import { WotsBars } from '../components/Home';
 import { useKeys } from '../launch/keys';
+import { isSwap, loadPending, savePending, clearPending, type Pending, type PendingSend } from './pending';
+import { relayFee, relayInfo, useRelay, type RelayInfo } from './relay';
+import { keyUsed, onEthereum, readKey, sendWithRelayer, sendWithWallet, type Wallet } from './actions';
+import Swap, { SendMode, useSwapConfig } from './Swap';
 
 // ------------------------------------------------------------------ config (dev overrides for fork tests)
 const devParam = (name: string): Hex | null => {
@@ -17,6 +21,8 @@ const devParam = (name: string): Hex | null => {
 };
 const VAULT: Hex | null = devParam('vault') ?? VAULT_ADDRESS;
 const TOKEN: Hex | null = devParam('token') ?? TOKEN_ADDRESS;
+const SWAP: Hex | null = devParam('swap') ?? SWAP_ADDRESS;
+const LAUNCHPAD: Hex | null = devParam('launchpad') ?? LAUNCHPAD_ADDRESS;
 const VAULT_FROM: bigint = (import.meta.env.DEV && new URLSearchParams(location.search).get('vaultblock')) ? BigInt(new URLSearchParams(location.search).get('vaultblock')!) : VAULT_BLOCK;
 const eth = () => client(1);
 
@@ -49,42 +55,10 @@ const errText = (e: unknown) => {
   return /rejected|denied/i.test(m) ? 'You rejected it in the wallet.' : m.split('\n')[0];
 };
 
-// ------------------------------------------------------------------ pending signatures (one key = one message)
-interface Pending {
-  nonce: number;
-  digest: Hex;
-  nextKey: Hex;
-  sig: Hex[];
-  transfers: { token: Hex; to: Hex; amount: string }[];
-  hash?: Hex;
-}
-const pendingKey = (id: Hex, nonce: number) => `bunker:sig:${VAULT}:${id}:${nonce}`.toLowerCase();
-function loadPending(id: Hex, nonce: number): Pending | null {
-  try {
-    const raw = localStorage.getItem(pendingKey(id, nonce));
-    return raw ? (JSON.parse(raw) as Pending) : null;
-  } catch {
-    return null;
-  }
-}
-function savePending(id: Hex, p: Pending) {
-  try {
-    localStorage.setItem(pendingKey(id, p.nonce), JSON.stringify(p));
-  } catch {
-    /* storage blocked: the signature still goes out, it just can't be re-broadcast from here */
-  }
-}
-function clearPending(id: Hex, nonce: number) {
-  try {
-    localStorage.removeItem(pendingKey(id, nonce));
-  } catch {
-    /* ignore */
-  }
-}
-
 // ------------------------------------------------------------------ panel
-export default function Vault() {
+export default function Vault({ buy }: { buy?: string | null }) {
   const keys = useKeys();
+  const startBuy = buy && isAddress(buy) ? getAddress(buy) : null;
   const [master, setMaster] = useState<Uint8Array | null>(null);
   return (
     <div className="vault">
@@ -97,8 +71,9 @@ export default function Vault() {
         <ul className="vault-facts">
           <li><span>Signature</span>Winternitz (WOTS, w=16) over keccak256, 67 chains</li>
           <li><span>Keys</span>one per withdrawal, burned on-chain after use</li>
-          <li><span>Submitter</span>any wallet; it only pays gas and cannot change recipients or amounts</li>
-          <li><span>Admin</span>none. No owner, no upgrade, no fee</li>
+          <li><span>Submitter</span>any wallet or the relayer; it only pays gas and cannot change recipients or amounts</li>
+          <li><span>Swap</span>buy and sell without leaving the vault; 0.5% of the ETH side</li>
+          <li><span>Admin</span>none. No owner, no upgrade, no vault fee</li>
         </ul>
       </div>
       {!VAULT ? (
@@ -120,7 +95,7 @@ export default function Vault() {
         <>
           <VaultStats vault={VAULT} />
           {master ? (
-            <Account master={master} vault={VAULT} onLock={() => setMaster(null)} />
+            <Account master={master} vault={VAULT} startBuy={startBuy} onLock={() => setMaster(null)} />
           ) : (
             <>
               <LastBunker vault={VAULT} />
@@ -337,8 +312,11 @@ interface AcctState {
   nonce: number;
 }
 
-function Account({ master, vault, onLock }: { master: Uint8Array; vault: Hex; onLock: () => void }) {
+function Account({ master, vault, startBuy, onLock }: { master: Uint8Array; vault: Hex; startBuy: Hex | null; onLock: () => void }) {
   const wallet = useWallet();
+  const relay = useRelay();
+  const swapCfg = useSwapConfig(SWAP, vault);
+  const [pending, setPending] = useState<Pending | null>(null);
   const id = useMemo(() => wots.accountId(master), [master]);
   useEffect(() => rememberId(id), [id]);
   const [acct, setAcct] = useState<AcctState | null>(null);
@@ -404,6 +382,7 @@ function Account({ master, vault, onLock }: { master: Uint8Array; vault: Hex; on
     return () => { dead = true; };
   }, [vault, id, tick]);
 
+  useEffect(() => setPending(acct ? loadPending(vault, id, acct.nonce) : null), [vault, id, acct]);
   const keyOk = !acct || !acct.exists || acct.key === wots.keyHash(master, acct.nonce);
   const held = useMemo(() => assets.filter(a => (bal[a.token] ?? 0n) > 0n), [assets, bal]);
 
@@ -435,19 +414,17 @@ function Account({ master, vault, onLock }: { master: Uint8Array; vault: Hex; on
       </div>
 
       <Deposit vault={vault} id={id} assets={assets} wallet={wallet} onDone={refresh} />
+      {acct?.exists && keyOk && swapCfg && (
+        <Swap vault={vault} cfg={swapCfg} id={id} master={master} nonce={acct.nonce} assets={assets} held={held} bal={bal} wallet={wallet}
+          relay={relay} launchpad={LAUNCHPAD} bunkerToken={TOKEN} startBuy={startBuy} pending={pending} setPending={setPending} onDone={refresh} />
+      )}
       {acct?.exists && keyOk && (
-        <Withdraw vault={vault} id={id} master={master} acct={acct} held={held} bal={bal} wallet={wallet} onDone={refresh} />
+        <Withdraw vault={vault} id={id} master={master} acct={acct} held={held} bal={bal} wallet={wallet} relay={relay}
+          pending={pending} setPending={setPending} onDone={refresh} />
       )}
       <Claims vault={vault} assets={assets} wallet={wallet} />
     </>
   );
-}
-
-type Wallet = ReturnType<typeof useWallet>;
-
-async function onEthereum(wallet: Wallet) {
-  if (!wallet.address) await wallet.connect();
-  if (wallet.chainId !== 1) await wallet.switchChain(1);
 }
 
 async function write(wallet: Wallet, req: { address: Hex; abi: unknown; functionName: string; args?: unknown[]; value?: bigint }) {
@@ -536,37 +513,35 @@ function Deposit({ vault, id, assets, wallet, onDone }: { vault: Hex; id: Hex; a
 }
 
 // ------------------------------------------------------------------ withdraw
-function Withdraw({ vault, id, master, acct, held, bal, wallet, onDone }: {
-  vault: Hex; id: Hex; master: Uint8Array; acct: AcctState; held: Asset[]; bal: Record<string, bigint>; wallet: Wallet; onDone: () => void;
+function Withdraw({ vault, id, master, acct, held, bal, wallet, relay, pending, setPending, onDone }: {
+  vault: Hex; id: Hex; master: Uint8Array; acct: AcctState; held: Asset[]; bal: Record<string, bigint>; wallet: Wallet;
+  relay: RelayInfo | null; pending: Pending | null; setPending: (p: Pending | null) => void; onDone: () => void;
 }) {
   const [to, setTo] = useState('');
   const [pick, setPick] = useState<Record<string, { on: boolean; amount: string }>>({});
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState('');
-  const [pending, setPending] = useState<Pending | null>(() => loadPending(id, acct.nonce));
+  const [modePick, setModePick] = useState<'relayer' | 'wallet' | null>(null);
+  const mine: PendingSend | null = pending && !isSwap(pending) ? pending : null;
 
   useEffect(() => {
     setPick(Object.fromEntries(held.map(a => [a.token, { on: true, amount: formatUnits(bal[a.token], a.decimals) }])));
   }, [held, bal]);
-  useEffect(() => setPending(loadPending(id, acct.nonce)), [id, acct.nonce]);
 
-  const submit = async (p: Pending) => {
-    await onEthereum(wallet);
-    setBusy(`Sending with key #${p.nonce}…`);
-    if (!wallet.walletClient || !wallet.address) throw new Error('Connect a wallet first.');
-    const hash = await wallet.walletClient.writeContract({
-      address: vault,
-      abi: vaultAbi,
-      functionName: 'execute',
-      args: [id, p.transfers.map(t => ({ token: t.token, to: t.to, amount: BigInt(t.amount) })), zeroAddress, 0n, p.nextKey, p.sig as never],
-      account: wallet.address,
-      chain: mainnet,
-    });
-    savePending(id, { ...p, hash });
-    setPending({ ...p, hash });
-    const r = await eth().waitForTransactionReceipt({ hash });
-    if (r.status !== 'success') throw new Error(`Transaction reverted: ${hash}`);
-    clearPending(id, p.nonce);
+  // gasless: the relayer submits and takes its fee, in ETH, from the bunker (the vault's own fee slot)
+  const relayOk = !!relay && !relay.paused && relay.vault.toLowerCase() === vault.toLowerCase();
+  const picked = held.filter(a => pick[a.token]?.on);
+  const tripGas = (r: RelayInfo) => r.gas.withdraw + picked.reduce((n, a) => n + (a.token === zeroAddress ? r.gas.perEth : r.gas.perToken), 0);
+  const feeEst = relayOk && relay ? relayFee(relay, tripGas(relay)) : 0n;
+  const ethBal = bal[zeroAddress] ?? 0n;
+  const noEth = relayOk && ethBal <= feeEst ? 'Gasless needs a little ETH in the bunker to pay the relayer. Sell a token for ETH in Swap first, or use a wallet.' : undefined;
+  const mode: 'relayer' | 'wallet' = !relayOk || noEth ? 'wallet' : modePick ?? (wallet.address ? 'wallet' : 'relayer');
+
+  const submit = async (p: PendingSend, via: 'relayer' | 'wallet') => {
+    const onHash = (hash: Hex) => { const withHash = { ...p, hash }; savePending(vault, id, withHash); setPending(withHash); };
+    setBusy(via === 'relayer' ? 'Relayer is sending it…' : `Sending with key #${p.nonce}…`);
+    const hash = via === 'relayer' ? await sendWithRelayer(vault, id, p, onHash) : await sendWithWallet(wallet, vault, null, id, p, onHash);
+    clearPending(vault, id, p.nonce);
     setPending(null);
     return hash;
   };
@@ -577,37 +552,43 @@ function Withdraw({ vault, id, master, acct, held, bal, wallet, onDone }: {
       if (!isAddress(to)) throw new Error('Enter a valid destination address.');
       const dest = getAddress(to);
       if (dest.toLowerCase() === vault.toLowerCase()) throw new Error('The destination can not be the vault itself.');
-      const transfers = held
-        .filter(a => pick[a.token]?.on)
-        .map(a => ({ token: a.token, to: dest, amount: parseUnits(pick[a.token].amount || '0', a.decimals), a }));
+      const transfers = picked.map(a => ({ token: a.token, to: dest, amount: parseUnits(pick[a.token].amount || '0', a.decimals), a }));
       if (!transfers.length) throw new Error('Pick at least one asset.');
       for (const t of transfers) {
         if (t.amount <= 0n) throw new Error(`Enter an amount for ${t.a.symbol}.`);
         if (t.amount > (bal[t.token] ?? 0n)) throw new Error(`Not enough ${t.a.symbol} in the bunker.`);
       }
+      if (mode === 'wallet' && !wallet.address) await wallet.connect();
       setBusy('Checking the vault…');
       const c = eth();
-      const [key, nonceBig] = await c.readContract({ address: vault, abi: vaultAbi, functionName: 'accounts', args: [id] });
-      const nonce = Number(nonceBig);
-      if (key !== wots.keyHash(master, nonce)) throw new Error('On-chain key does not match this phrase. Refresh and retry.');
-      const nextKey = wots.keyHash(master, nonce + 1);
-      if (await c.readContract({ address: vault, abi: vaultAbi, functionName: 'spentKey', args: [nextKey] }))
-        throw new Error('Next key is already burned. This should never happen; stop and ask for help.');
+      const { key, nonce, nextKey } = await readKey(vault, id, master);
+
+      // the relayer's fee comes out of the bunker's ETH, on top of what is sent
+      let fee = 0n;
+      let trimmed = false;
+      if (mode === 'relayer') {
+        const info = await relayInfo();
+        if (info.paused) throw new Error(info.paused);
+        fee = relayFee(info, tripGas(info));
+        if (ethBal <= fee) throw new Error('The bunker does not hold enough ETH to pay the relayer. Use a wallet.');
+        const e = transfers.find(t => t.token === zeroAddress);
+        if (e && e.amount + fee > ethBal) { e.amount = ethBal - fee; trimmed = true; }
+      }
       const list = transfers.map(t => ({ token: t.token, to: t.to, amount: t.amount }));
-      const digest = wots.digestOf({ chainId: 1, vault, id, nonce, transfers: list, relayer: zeroAddress, fee: 0n, nextKey });
-      const onchain = await c.readContract({ address: vault, abi: vaultAbi, functionName: 'digest', args: [id, list, zeroAddress, 0n, nextKey] });
+      const digest = wots.digestOf({ chainId: 1, vault, id, nonce, transfers: list, relayer: zeroAddress, fee, nextKey });
+      const onchain = await c.readContract({ address: vault, abi: vaultAbi, functionName: 'digest', args: [id, list, zeroAddress, fee, nextKey] });
       if (onchain !== digest) throw new Error('Message mismatch with the contract. Nothing was signed.');
 
-      const prior = loadPending(id, nonce);
+      const prior = loadPending(vault, id, nonce);
       if (prior && prior.digest !== digest)
-        throw new Error(`Key #${nonce} already signed a different withdrawal. Re-broadcast that one (below) — a key must never sign two messages.`);
+        throw new Error(`Key #${nonce} already signed a different message. Send that one again (below): a key must never sign two messages.`);
       const sig = prior?.sig ?? wots.sign(master, nonce, digest);
       if (wots.recover(digest, sig) !== key) throw new Error('Signature self-check failed. Nothing was sent.');
-      const p: Pending = { nonce, digest, nextKey, sig, transfers: list.map(t => ({ ...t, amount: t.amount.toString() })) };
-      savePending(id, p);
+      const p: PendingSend = { nonce, digest, nextKey, sig, transfers: list.map(t => ({ ...t, amount: t.amount.toString() })), fee: fee.toString() };
+      savePending(vault, id, p);
       setPending(p);
-      const hash = await submit(p);
-      setMsg(`Done. Key #${nonce} burned, bunker rotated to key #${nonce + 1}. Tx ${short(hash, 6)}`);
+      const hash = await submit(p, mode);
+      setMsg(`Done. Key #${nonce} burned, bunker rotated to key #${nonce + 1}.${fee > 0n ? ` The relayer took ${fmt(fee, 18)} ETH${trimmed ? ', out of the ETH you sent' : ''}.` : ''}${hash ? ` Tx ${short(hash, 6)}` : ''}`);
       onDone();
     } catch (e) {
       setMsg(errText(e));
@@ -616,20 +597,19 @@ function Withdraw({ vault, id, master, acct, held, bal, wallet, onDone }: {
     }
   };
 
-  const rebroadcast = async () => {
-    if (!pending) return;
+  const again = async (via: 'relayer' | 'wallet') => {
+    if (!mine) return;
     setMsg('');
     try {
-      const [, nonceBig] = await eth().readContract({ address: vault, abi: vaultAbi, functionName: 'accounts', args: [id] });
-      if (Number(nonceBig) > pending.nonce) {
-        clearPending(id, pending.nonce);
+      if (await keyUsed(vault, id, mine.nonce)) {
+        clearPending(vault, id, mine.nonce);
         setPending(null);
-        setMsg(`Key #${pending.nonce} already landed on-chain.`);
+        setMsg(`Key #${mine.nonce} already landed on-chain.`);
         onDone();
         return;
       }
-      const hash = await submit(pending);
-      setMsg(`Done. Tx ${short(hash, 6)}`);
+      const hash = await submit(mine, via);
+      setMsg(`Done.${hash ? ` Tx ${short(hash, 6)}` : ''}`);
       onDone();
     } catch (e) {
       setMsg(errText(e));
@@ -641,14 +621,16 @@ function Withdraw({ vault, id, master, acct, held, bal, wallet, onDone }: {
   return (
     <div className="vault-card">
       <div className="vault-card-h">Withdraw <span className="dim">signed with key #{acct.nonce}, then rotates</span></div>
-      {pending && (
+      {mine && (
         <div className="vault-pending">
-          <b>Signed, not confirmed yet:</b> key #{pending.nonce} →{' '}
-          {pending.transfers.length} transfer{pending.transfers.length > 1 ? 's' : ''} to {short(pending.transfers[0].to, 4)}
-          {pending.hash && <> · <a href={`https://etherscan.io/tx/${pending.hash}`} target="_blank" rel="noreferrer">tx</a></>}
-          <button className="btn sm" disabled={!!busy} onClick={rebroadcast}>Re-broadcast / check</button>
+          <b>Signed, not confirmed yet:</b> key #{mine.nonce} →{' '}
+          {mine.transfers.length} transfer{mine.transfers.length > 1 ? 's' : ''} to {short(mine.transfers[0].to, 4)}
+          {mine.hash && <> · <a href={`https://etherscan.io/tx/${mine.hash}`} target="_blank" rel="noreferrer">tx</a></>}
+          <button className="btn sm" disabled={!!busy} onClick={() => again('wallet')}>Re-broadcast / check</button>
+          {relayOk && BigInt(mine.fee ?? '0') > 0n && <button className="btn sm" disabled={!!busy} onClick={() => again('relayer')}>Send it gasless</button>}
         </div>
       )}
+      {pending && !mine && <p className="dim small">Key #{pending.nonce} has already signed a swap that has not landed yet. Finish that one first.</p>}
       <input className="field mono" placeholder="destination address (fresh, never signed)" value={to} onChange={e => setTo(e.target.value.trim())} />
       <table className="tbl">
         <tbody>
@@ -663,14 +645,16 @@ function Withdraw({ vault, id, master, acct, held, bal, wallet, onDone }: {
           ))}
         </tbody>
       </table>
-      <button className="btn primary" disabled={!!busy || !held.length || !!pending} onClick={wallet.address ? go : () => wallet.connect().catch(e => setMsg(errText(e)))}>
-        {busy || (wallet.address ? `Sign with key #${acct.nonce} & send` : 'Connect a wallet to submit')}
+      <SendMode mode={mode} setMode={setModePick} relay={relayOk ? relay : null} why={noEth} />
+      {mode === 'relayer' && <div className="dim small">Relayer fee: <span className="mono">{fmt(feeEst, 18)} ETH</span>, taken from the bunker's ETH.</div>}
+      <button className="btn primary" disabled={!!busy || !held.length || !!pending} onClick={mode === 'relayer' || wallet.address ? go : () => wallet.connect().catch(e => setMsg(errText(e)))}>
+        {busy || (mode === 'relayer' || wallet.address ? `Sign with key #${acct.nonce} & send` : 'Connect a wallet to submit')}
       </button>
       {msg && <p className="small">{msg}</p>}
       <p className="dim small">
-        The signature is made in this browser. The connected wallet only submits it and pays gas (any wallet works, a
-        throwaway is fine). If it doesn't confirm, re-broadcast the same signature: never sign a different withdrawal
-        with the same key, here or on another device.
+        The signature is made in this browser. Whoever submits it (your wallet, a throwaway, the relayer) only pays gas
+        and can not change a thing. If it doesn't confirm, send the same signature again: never sign a different
+        message with the same key, here or on another device.
       </p>
     </div>
   );

@@ -259,7 +259,7 @@ function Tools() {
       </a>
       <a className="tl" href="#vault">
         <span className="tl-w">Vault</span>
-        <span className="tl-d">Park ETH and tokens behind hash-based one-time signatures. No ECDSA key can move them. Every key burns after one use.</span>
+        <span className="tl-d">Park ETH and tokens behind hash-based one-time signatures. No ECDSA key can move them. Buy and sell without leaving it, and withdraw with no wallet and no gas.</span>
         <span className="tl-a" aria-hidden="true">↗</span>
       </a>
       <a className="tl" href="#tripwire">

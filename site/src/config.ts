@@ -23,3 +23,10 @@ export const TRIPWIRE_ADDRESS: `0x${string}` | null = "0x20085f519465288A5f4ed89
 export const LAUNCHPAD_ADDRESS: `0x${string}` | null = "0xe5871db88A72e4B18Fe37175C4774718aB356000";
 /** block the launchpad was deployed in (log scans start here). */
 export const LAUNCHPAD_BLOCK = 26154517n;
+
+/** BunkerSwap (buy and sell inside the vault, 0.5% of the ETH side) on Ethereum mainnet. null until deploy. */
+export const SWAP_ADDRESS: `0x${string}` | null = "0x620158a6911A18434148d74B7132ceA71C5F83Ba";
+/** block BunkerSwap was deployed in. */
+export const SWAP_BLOCK = 26163043n;
+/** The gasless relayer. Same origin: api/relay.js forwards to the relayer box. */
+export const RELAY_URL = '/api/relay';

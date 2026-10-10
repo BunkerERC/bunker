@@ -858,3 +858,15 @@ main.home { display: block; }
   .lp-bench-l h2 { font-size: 32px; }
 }
 .lp .sec-p { margin-top: 18px; }
+
+/* ---------- vault: swap + gasless ---------- */
+.send-mode { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.send-mode .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+.swap-card .seg.buysell { justify-self: start; }
+.swap-card .seg.buysell button { min-width: 84px; }
+.swap-q { margin: 0; display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.swap-q > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 10px; background: var(--bg); font-size: 13px; min-height: 36px; }
+.swap-q dt { color: var(--dim2); flex: none; }
+.swap-q dd { margin: 0; text-align: right; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; min-width: 0; overflow-wrap: anywhere; }
+.swap-q .slip { height: 24px; font-size: 11.5px; max-width: 130px; padding: 0 6px; }
+.vault-pending .row-gap { flex-basis: 100%; }

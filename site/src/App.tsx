@@ -36,7 +36,7 @@ function readHash(): Route {
   const [path, query = ''] = location.hash.replace(/^#/, '').split('?');
   const a = new URLSearchParams(query).get('a');
   const addrs = a ? a.split(',').map(s => s.trim()).filter(Boolean) : [];
-  if (path === 'move' || path === 'vault' || path === 'tripwire' || path === 'docs') return { page: path, section: null, addrs: [] };
+  if (path === 'move' || path === 'vault' || path === 'tripwire' || path === 'docs') return { page: path, section: null, addrs: [], query: new URLSearchParams(query) };
   if (path === 'launch' || path.startsWith('launch/')) return { page: 'launch', section: null, addrs: [], sub: path.slice(7), query: new URLSearchParams(query) };
   if (/^coin\/0x[0-9a-fA-F]{40}$/.test(path)) return { page: 'coin', section: null, addrs: [], sub: path.slice(5) };
   const section = path === 'board' || path === 'coin' || path === 'scan' ? path : null;
@@ -87,7 +87,7 @@ export default function App() {
               <h1 className="display sec-h">Vault</h1>
               <p className="sec-p">Park funds where only a hash-based signature can move them.</p>
             </div>
-            <VaultPanel />
+            <VaultPanel buy={route.query?.get('buy')} />
           </section>
         )}
       </main>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SWAP_ADDRESS } from '../config';
 import { formatEther, formatUnits, getAddress, hexToBytes, isAddress, parseEther, parseUnits, zeroAddress, zeroHash, type Hex } from 'viem';
 import launchpadAbi from './abi/BunkerLaunchpad';
 import tokenAbi from './abi/BunkerLaunchToken';
@@ -515,6 +516,7 @@ function Trade({ row, priceEth, onDone }: { row: CoinRow; priceEth: number; onDo
         </div>
         {msg && <p className={msg.ok ? 'ok' : 'err'}>{msg.t} {msg.h && <TxLink h={msg.h} />}</p>}
         <p className="dim tiny">Plain Uniswap v4 pool: any router, aggregator or bot can trade it too. {m.usd ? '' : ''}</p>
+        {SWAP_ADDRESS && <a className="small" href={`#vault?buy=${row.token}`}>Buy it inside your bunker, no wallet needed →</a>}
       </div>
     </div>
   );

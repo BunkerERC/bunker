@@ -31,7 +31,7 @@ contract MockERC20 {
         return true;
     }
 
-    function transfer(address to, uint256 v) external returns (bool) {
+    function transfer(address to, uint256 v) external virtual returns (bool) {
         return _t(msg.sender, to, v);
     }
 
